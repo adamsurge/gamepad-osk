@@ -32,7 +32,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
 - Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
-- Native touchscreen input with slide selection
+- Native multi-contact touchscreen input with independent slide selection
 - Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
@@ -74,11 +74,13 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 ## Touchscreen
 
-Touch a key to highlight it, slide to another key to change selection, then lift your finger to activate the final highlighted key. Sliding into padding, a gap, or outside the window clears selection; lifting there does not activate anything. Touching modifiers such as Shift, Ctrl, Alt, Super, and Caps uses the same behavior as gamepad activation.
+Touch one or more keys to highlight them independently. Each contact can slide to a different key, then activates whichever key it's over when lifted. Sliding into padding, a gap, or outside the window clears that contact's selection only - lifting there activates nothing. If multiple contacts land on the same key, it stays highlighted until the last one leaves, and each contact activates it once on lift.
 
-Only first finger that touches a key controls current touch sequence. Additional fingers are ignored until first finger lifts or its sequence is canceled. Touch selection remains separate from gamepad cursor, so gamepad navigation continues without moving pending touch selection. Hiding or closing keyboard cancels pending touch.
+Touch selection is independent of the gamepad cursor, so gamepad navigation won't disturb any pending touch selections. Hiding or closing the keyboard cancels all pending touches.
 
-Native SDL3 touch events work on X11 and Wayland. Wayland layer-shell overlay accepts touch without keyboard focus. SDL-generated mouse events are disabled, preventing duplicate activation.
+Keys commit in the order fingers are released - this applies to modifiers too, so releasing Shift before a letter applies it, releasing the letter first types it unmodified. For held Shift, use gamepad LT.
+
+Native SDL3 touch events work on both X11 and Wayland, and the Wayland layer-shell overlay accepts touch without needing keyboard focus. SDL-generated mouse events are disabled to prevent duplicate activation.
 
 ## Usage
 
