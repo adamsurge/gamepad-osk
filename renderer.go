@@ -100,7 +100,6 @@ func (r *Renderer) Draw(kb *KeyboardState, touch *TouchInput) {
 
 	// Draw keyboard rows
 	geometry := NewKeyboardGeometry(kb.Layout, r.unit, r.pad, r.statusH)
-	touchPos, hasTouch := touch.Selected()
 	for ri, row := range kb.Layout {
 		for ci, key := range row {
 			pos := KeyPosition{Row: ri, Col: ci}
@@ -108,7 +107,7 @@ func (r *Renderer) Draw(kb *KeyboardState, touch *TouchInput) {
 			if !ok {
 				continue
 			}
-			isCursor, isTouch := keySelectionState(pos, kb, touchPos, hasTouch)
+			isCursor, isTouch := keySelectionState(pos, kb, touch)
 			r.drawKey(key, rect, isCursor, isTouch, kb)
 		}
 	}
@@ -282,8 +281,8 @@ func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor, isTouch bool, kb *K
 	}
 }
 
-func keySelectionState(pos KeyPosition, kb *KeyboardState, touchPos KeyPosition, hasTouch bool) (isCursor, isTouch bool) {
-	return pos.Row == kb.CursorRow && pos.Col == kb.CursorCol, hasTouch && pos == touchPos
+func keySelectionState(pos KeyPosition, kb *KeyboardState, touch *TouchInput) (isCursor, isTouch bool) {
+	return pos.Row == kb.CursorRow && pos.Col == kb.CursorCol, touch.IsSelected(pos)
 }
 
 func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
