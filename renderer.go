@@ -3,16 +3,26 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
 )
 
-const promptFontPath = "/usr/share/fonts/TTF/promptfont.ttf"
+const fontDirsEnv = "GAMEPAD_OSK_FONT_DIRS"
+
+var fallbackFontDirs = []string{
+	"/usr/share/fonts/TTF",
+	"/usr/share/fonts/truetype/dejavu",
+	"/usr/share/fonts/truetype/liberation",
+	"/usr/share/fonts/truetype/freefont",
+	"/usr/share/fonts/truetype",
+	"/usr/share/fonts",
+}
 
 type texCacheKey struct {
-	text string
-	font uintptr // font pointer as identity
+	text  string
+	font  uintptr // font pointer as identity
 	color Color
 }
 
@@ -60,7 +70,7 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 	}
 
 	var fontGlyph *Font
-	if _, err := os.Stat(promptFontPath); err == nil {
+	if promptFontPath := findFont("Promptfont"); promptFontPath != "" {
 		fontGlyph, _ = TTF3OpenFont(promptFontPath, float32(glyphSize))
 	}
 	if fontGlyph == nil {
@@ -458,26 +468,32 @@ func isModActive(key KeyDef, kb *KeyboardState) bool {
 }
 
 func findFont(names ...string) string {
-	// Common font directories on Linux
-	dirs := []string{
-		"/usr/share/fonts/TTF",
-		"/usr/share/fonts/truetype/dejavu",
-		"/usr/share/fonts/truetype/liberation",
-		"/usr/share/fonts/truetype/freefont",
-		"/usr/share/fonts/truetype",
-		"/usr/share/fonts",
+	return findFontInDirs(names, fontSearchDirs())
+}
+
+func fontSearchDirs() []string {
+	dirs := make([]string, 0, len(fallbackFontDirs)+1)
+	for _, dir := range filepath.SplitList(os.Getenv(fontDirsEnv)) {
+		if dir != "" {
+			dirs = append(dirs, dir)
+		}
 	}
+	return append(dirs, fallbackFontDirs...)
+}
+
+func findFontInDirs(names, dirs []string) string {
 	filePatterns := map[string][]string{
-		"DejaVu Sans":    {"DejaVuSans.ttf"},
+		"DejaVu Sans":     {"DejaVuSans.ttf"},
 		"Liberation Sans": {"LiberationSans-Regular.ttf"},
 		"FreeSans":        {"FreeSans.ttf"},
+		"Promptfont":      {"promptfont.ttf"},
 	}
 
-	for _, name := range names {
-		patterns := filePatterns[name]
-		for _, dir := range dirs {
+	for _, dir := range dirs {
+		for _, name := range names {
+			patterns := filePatterns[name]
 			for _, pat := range patterns {
-				path := dir + "/" + pat
+				path := filepath.Join(dir, pat)
 				if _, err := os.Stat(path); err == nil {
 					return path
 				}
