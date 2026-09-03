@@ -77,7 +77,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 Touch one or more keys to highlight them independently. Each contact can slide to a different key, then activates whichever key it's over when lifted. Sliding into padding, a gap, or outside the window clears that contact's selection only - lifting there activates nothing. If multiple contacts land on the same key, it stays highlighted until the last one leaves, and each contact activates it once on lift.
 
-Touch selection is independent of the gamepad cursor, so gamepad navigation won't disturb any pending touch selections. Hiding or closing the keyboard cancels all pending touches.
+Touch selection uses the theme's pressed-key colour, distinct from the gamepad cursor highlight. Touch takes visual precedence when both inputs select the same key. Gamepad navigation won't disturb any pending touch selections. Hiding or closing the keyboard cancels all pending touches.
 
 Keys commit in the order fingers are released - this applies to modifiers too, so releasing Shift before a letter applies it, releasing the letter first types it unmodified. For held Shift, use gamepad LT.
 

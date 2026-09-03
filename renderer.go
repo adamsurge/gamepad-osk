@@ -235,19 +235,18 @@ func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor, isTouch bool, kb *K
 	t := r.theme
 
 	flashed := kb.IsFlashed(key)
-	highlighted := isCursor || isTouch || flashed
-	var bg, border Color
-	switch {
-	case highlighted:
-		bg, border = t.HighlightBg, t.HighlightBorder
-	case key.IsModifier && isModActive(key, kb):
-		bg, border = t.ModifierActiveBg, t.HighlightBorder
-	case key.IsModifier:
-		bg, border = t.ModifierBg, t.KeyBorder
-	case strings.HasPrefix(key.Label, "F") && len(key.Label) > 1 && key.Label[1] >= '0' && key.Label[1] <= '9':
-		bg, border = t.FnKeyBg, t.KeyBorder
-	default:
-		bg, border = t.KeyBg, t.KeyBorder
+	bg, border, selected := keySelectionColors(t, isCursor, isTouch, flashed)
+	if !selected {
+		switch {
+		case key.IsModifier && isModActive(key, kb):
+			bg, border = t.ModifierActiveBg, t.HighlightBorder
+		case key.IsModifier:
+			bg, border = t.ModifierBg, t.KeyBorder
+		case strings.HasPrefix(key.Label, "F") && len(key.Label) > 1 && key.Label[1] >= '0' && key.Label[1] <= '9':
+			bg, border = t.FnKeyBg, t.KeyBorder
+		default:
+			bg, border = t.KeyBg, t.KeyBorder
+		}
 	}
 
 	// Fill
@@ -259,10 +258,8 @@ func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor, isTouch bool, kb *K
 
 	// Label
 	label := kb.DisplayLabel(key)
-	tc := t.KeyText
-	if highlighted {
-		tc = Color{R: 255, G: 255, B: 255, A: 255}
-	} else if key.IsModifier && isModActive(key, kb) {
+	tc := keySelectionTextColor(t, isTouch, selected)
+	if !selected && key.IsModifier && isModActive(key, kb) {
 		tc = t.ModifierActiveText
 	}
 	// Use Promptfont for labels containing its codepoints (e.g. mouse speed icons)
@@ -289,6 +286,23 @@ func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor, isTouch bool, kb *K
 		r.renderText(r.fontGlyph, glyph, t.GlyphColor,
 			FRect{X: rect.X, Y: rect.Y, W: rect.W - 3, H: rect.H - 2}, AlignBottomRight)
 	}
+}
+
+func keySelectionColors(theme Theme, isCursor, isTouch, flashed bool) (bg, border Color, selected bool) {
+	if isTouch {
+		return theme.KeyBgPressed, theme.HighlightBorder, true
+	}
+	if isCursor || flashed {
+		return theme.HighlightBg, theme.HighlightBorder, true
+	}
+	return Color{}, Color{}, false
+}
+
+func keySelectionTextColor(theme Theme, isTouch, selected bool) Color {
+	if selected && !isTouch {
+		return Color{R: 255, G: 255, B: 255, A: 255}
+	}
+	return theme.KeyText
 }
 
 func keySelectionState(pos KeyPosition, kb *KeyboardState, touch *TouchInput) (isCursor, isTouch bool) {
