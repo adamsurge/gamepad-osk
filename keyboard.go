@@ -126,7 +126,23 @@ func (kb *KeyboardState) PressCurrent(inj *Injector) {
 		return
 	}
 
-	key := kb.CurrentKey()
+	kb.pressKey(kb.CurrentKey(), inj)
+}
+
+func (kb *KeyboardState) PressAt(pos KeyPosition, inj *Injector) bool {
+	if pos.Row < 0 || pos.Row >= len(kb.Layout) {
+		return false
+	}
+	row := kb.Layout[pos.Row]
+	if pos.Col < 0 || pos.Col >= len(row) {
+		return false
+	}
+
+	kb.pressKey(row[pos.Col], inj)
+	return true
+}
+
+func (kb *KeyboardState) pressKey(key KeyDef, inj *Injector) {
 	if key.IsModifier {
 		kb.toggleModifier(key)
 		return

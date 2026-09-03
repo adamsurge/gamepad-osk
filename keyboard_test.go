@@ -343,3 +343,149 @@ func TestSensitivityClamp(t *testing.T) {
 		t.Errorf("clamp down at min: got %d, want 1", sensitivity)
 	}
 }
+
+func TestPressAtMatchesPressCurrentStateTransitions(t *testing.T) {
+	positions := []KeyPosition{
+		findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "shift" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.Code == KEY_Q }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "caps" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.Code == KEY_Q }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "caps" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "ctrl" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "alt" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "meta" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.Code == KEY_Q }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.Label == "AltTab" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.Code == KEY_Q }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "shift" }),
+		findKeyPosition(t, func(key KeyDef) bool { return key.Label == "AltTab" }),
+	}
+
+	current := NewKeyboardState(LayoutQWERTY)
+	at := NewKeyboardState(LayoutQWERTY)
+	startRow, startCol := at.CursorRow, at.CursorCol
+	for _, pos := range positions {
+		current.CursorRow = pos.Row
+		current.CursorCol = pos.Col
+		current.PressCurrent(nil)
+		if !at.PressAt(pos, nil) {
+			t.Fatalf("PressAt(%v) returned false", pos)
+		}
+		if keyboardActivationState(*at) != keyboardActivationState(*current) {
+			t.Fatalf("PressAt(%v) state = %#v, PressCurrent state = %#v", pos, keyboardActivationState(*at), keyboardActivationState(*current))
+		}
+	}
+
+	if at.CursorRow != startRow || at.CursorCol != startCol {
+		t.Errorf("PressAt moved cursor to (%d, %d), want (%d, %d)", at.CursorRow, at.CursorCol, startRow, startCol)
+	}
+}
+
+func TestPressAtCallbacks(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	startRow, startCol := kb.CursorRow, kb.CursorCol
+	shift := findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "shift" })
+	cfg := findKeyPosition(t, func(key KeyDef) bool { return key.Label == "Cfg" })
+	up := findKeyPosition(t, func(key KeyDef) bool { return key.Code == KEY_UP })
+
+	forwardCalls := 0
+	reverseCalls := 0
+	sensitivityCalls := 0
+	kb.OnThemeCycle = func() { forwardCalls++ }
+	kb.OnThemeCycleReverse = func() { reverseCalls++ }
+	kb.OnSensitivityUp = func() { sensitivityCalls++ }
+
+	kb.PressAt(cfg, nil)
+	kb.PressAt(shift, nil)
+	kb.PressAt(cfg, nil)
+	kb.PressAt(shift, nil)
+	kb.PressAt(up, nil)
+
+	if forwardCalls != 1 || reverseCalls != 1 || sensitivityCalls != 1 {
+		t.Errorf("callback counts = forward %d, reverse %d, sensitivity %d; want 1 each", forwardCalls, reverseCalls, sensitivityCalls)
+	}
+	if kb.ShiftActive {
+		t.Error("one-shot shift remained active after sensitivity action")
+	}
+	if kb.CursorRow != startRow || kb.CursorCol != startCol {
+		t.Errorf("PressAt moved cursor to (%d, %d), want (%d, %d)", kb.CursorRow, kb.CursorCol, startRow, startCol)
+	}
+}
+
+func TestPressAtAltTab(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	altTab := findKeyPosition(t, func(key KeyDef) bool { return key.Label == "AltTab" })
+	q := findKeyPosition(t, func(key KeyDef) bool { return key.Code == KEY_Q })
+
+	if !kb.PressAt(altTab, nil) {
+		t.Fatal("PressAt AltTab returned false")
+	}
+	if !kb.AltTabHeld {
+		t.Error("PressAt AltTab did not hold Alt")
+	}
+	kb.PressAt(q, nil)
+	if kb.AltTabHeld {
+		t.Error("PressAt non-AltTab key did not release held Alt")
+	}
+}
+
+func TestPressAtInvalidPosition(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	startRow, startCol := kb.CursorRow, kb.CursorCol
+	tests := []KeyPosition{
+		{Row: -1, Col: 0},
+		{Row: 0, Col: -1},
+		{Row: len(kb.Layout), Col: 0},
+		{Row: 0, Col: len(kb.Layout[0])},
+	}
+
+	for _, pos := range tests {
+		if kb.PressAt(pos, nil) {
+			t.Errorf("PressAt(%v) returned true", pos)
+		}
+	}
+	if keyboardActivationState(*kb) != (activationState{}) {
+		t.Errorf("invalid PressAt changed keyboard state: %#v", keyboardActivationState(*kb))
+	}
+	if kb.CursorRow != startRow || kb.CursorCol != startCol {
+		t.Errorf("invalid PressAt moved cursor to (%d, %d), want (%d, %d)", kb.CursorRow, kb.CursorCol, startRow, startCol)
+	}
+
+	empty := NewKeyboardState([][]KeyDef{{}})
+	if empty.PressAt(KeyPosition{Row: 0, Col: 0}, nil) {
+		t.Error("PressAt accepted position in empty row")
+	}
+}
+
+type activationState struct {
+	shift  bool
+	caps   bool
+	ctrl   bool
+	alt    bool
+	meta   bool
+	altTab bool
+}
+
+func keyboardActivationState(kb KeyboardState) activationState {
+	return activationState{
+		shift:  kb.ShiftActive,
+		caps:   kb.CapsActive,
+		ctrl:   kb.CtrlActive,
+		alt:    kb.AltActive,
+		meta:   kb.MetaActive,
+		altTab: kb.AltTabHeld,
+	}
+}
+
+func findKeyPosition(t *testing.T, matches func(KeyDef) bool) KeyPosition {
+	t.Helper()
+	for rowIdx, row := range LayoutQWERTY {
+		for colIdx, key := range row {
+			if matches(key) {
+				return KeyPosition{Row: rowIdx, Col: colIdx}
+			}
+		}
+	}
+	t.Fatal("matching key not found")
+	return KeyPosition{}
+}
