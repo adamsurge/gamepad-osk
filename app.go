@@ -3,9 +3,9 @@ package main //nolint:revive // main package needs no doc comment
 import (
 	"log"
 	"os"
-	"strconv"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 )
