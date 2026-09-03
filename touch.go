@@ -18,12 +18,18 @@ type TouchEvent struct {
 	Y        float32
 }
 
-type TouchInput struct {
-	owned       bool
-	touchID     uint64
-	fingerID    int64
+type TouchContact struct {
+	TouchID  uint64
+	FingerID int64
+}
+
+type TouchSequence struct {
 	selected    KeyPosition
 	hasSelected bool
+}
+
+type TouchInput struct {
+	contacts map[TouchContact]TouchSequence
 }
 
 func (t *TouchInput) Handle(
@@ -38,82 +44,88 @@ func (t *TouchInput) Handle(
 
 	switch event.Phase {
 	case TouchDown:
-		if t.owned {
+		contact := contactFromEvent(event)
+		if _, exists := t.contacts[contact]; exists {
 			return nil, false
 		}
 		pos, ok := touchHitTest(event.X, event.Y, windowWidth, windowHeight, geometry)
 		if !ok {
 			return nil, false
 		}
-		t.owned = true
-		t.touchID = event.TouchID
-		t.fingerID = event.FingerID
-		t.selected = pos
-		t.hasSelected = true
+		if t.contacts == nil {
+			t.contacts = make(map[TouchContact]TouchSequence)
+		}
+		t.contacts[contact] = TouchSequence{selected: pos, hasSelected: true}
 		return nil, true
 
 	case TouchMotion:
-		if !t.owns(event) {
+		contact := contactFromEvent(event)
+		sequence, exists := t.contacts[contact]
+		if !exists {
 			return nil, false
 		}
 		pos, ok := touchHitTest(event.X, event.Y, windowWidth, windowHeight, geometry)
-		return nil, t.setSelection(pos, ok)
+		if !setTouchSelection(&sequence, pos, ok) {
+			return nil, false
+		}
+		t.contacts[contact] = sequence
+		return nil, true
 
 	case TouchUp:
-		if !t.owns(event) {
+		contact := contactFromEvent(event)
+		sequence, exists := t.contacts[contact]
+		if !exists {
 			return nil, false
 		}
 		pos, ok := touchHitTest(event.X, event.Y, windowWidth, windowHeight, geometry)
-		activateSelected := ok && t.hasSelected && pos == t.selected
-		selected := t.selected
-		t.reset()
+		activateSelected := ok && sequence.hasSelected && pos == sequence.selected
+		selected := sequence.selected
+		delete(t.contacts, contact)
 		if activateSelected {
 			return &selected, true
 		}
 		return nil, true
 
 	case TouchCanceled:
-		if !t.owns(event) {
+		contact := contactFromEvent(event)
+		if _, exists := t.contacts[contact]; !exists {
 			return nil, false
 		}
-		t.reset()
+		delete(t.contacts, contact)
 		return nil, true
 	}
 
 	return nil, false
 }
 
-func (t *TouchInput) Selected() (KeyPosition, bool) {
-	return t.selected, t.hasSelected
+func (t *TouchInput) IsSelected(pos KeyPosition) bool {
+	for _, sequence := range t.contacts {
+		if sequence.hasSelected && sequence.selected == pos {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *TouchInput) Cancel() bool {
-	if !t.owned {
+	if len(t.contacts) == 0 {
 		return false
 	}
-	t.reset()
+	t.contacts = nil
 	return true
 }
 
-func (t *TouchInput) owns(event TouchEvent) bool {
-	return t.owned && event.TouchID == t.touchID && event.FingerID == t.fingerID
+func contactFromEvent(event TouchEvent) TouchContact {
+	return TouchContact{TouchID: event.TouchID, FingerID: event.FingerID}
 }
 
-func (t *TouchInput) setSelection(pos KeyPosition, ok bool) bool {
-	if t.hasSelected == ok && (!ok || t.selected == pos) {
+func setTouchSelection(sequence *TouchSequence, pos KeyPosition, ok bool) bool {
+	if sequence.hasSelected == ok && (!ok || sequence.selected == pos) {
 		return false
 	}
-	t.selected = pos
-	t.hasSelected = ok
+	sequence.selected = pos
+	sequence.hasSelected = ok
 	return true
-}
-
-func (t *TouchInput) reset() {
-	t.owned = false
-	t.touchID = 0
-	t.fingerID = 0
-	t.selected = KeyPosition{}
-	t.hasSelected = false
 }
 
 func touchHitTest(
