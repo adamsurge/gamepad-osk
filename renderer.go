@@ -81,7 +81,7 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 	}, nil
 }
 
-func (r *Renderer) Draw(kb *KeyboardState) {
+func (r *Renderer) Draw(kb *KeyboardState, touch *TouchInput) {
 	if r.dirtyFrames <= 0 {
 		return
 	}
@@ -100,14 +100,16 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 
 	// Draw keyboard rows
 	geometry := NewKeyboardGeometry(kb.Layout, r.unit, r.pad, r.statusH)
+	touchPos, hasTouch := touch.Selected()
 	for ri, row := range kb.Layout {
 		for ci, key := range row {
-			rect, ok := geometry.KeyRect(KeyPosition{Row: ri, Col: ci})
+			pos := KeyPosition{Row: ri, Col: ci}
+			rect, ok := geometry.KeyRect(pos)
 			if !ok {
 				continue
 			}
-			isCursor := ri == kb.CursorRow && ci == kb.CursorCol
-			r.drawKey(key, rect, isCursor, kb)
+			isCursor, isTouch := keySelectionState(pos, kb, touchPos, hasTouch)
+			r.drawKey(key, rect, isCursor, isTouch, kb)
 		}
 	}
 
@@ -220,13 +222,14 @@ func (r *Renderer) cachedText(font *Font, text string, color Color) texCacheEntr
 	return entry
 }
 
-func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor bool, kb *KeyboardState) {
+func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor, isTouch bool, kb *KeyboardState) {
 	t := r.theme
 
 	flashed := kb.IsFlashed(key)
+	highlighted := isCursor || isTouch || flashed
 	var bg, border Color
 	switch {
-	case isCursor || flashed:
+	case highlighted:
 		bg, border = t.HighlightBg, t.HighlightBorder
 	case key.IsModifier && isModActive(key, kb):
 		bg, border = t.ModifierActiveBg, t.HighlightBorder
@@ -248,7 +251,7 @@ func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor bool, kb *KeyboardSt
 	// Label
 	label := kb.DisplayLabel(key)
 	tc := t.KeyText
-	if isCursor || flashed {
+	if highlighted {
 		tc = Color{R: 255, G: 255, B: 255, A: 255}
 	} else if key.IsModifier && isModActive(key, kb) {
 		tc = t.ModifierActiveText
@@ -261,7 +264,7 @@ func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor bool, kb *KeyboardSt
 	r.renderText(labelFont, label, tc, rect, AlignCenter)
 
 	// Shift hint (top-right)
-	if key.ShiftLabel != "" && !key.IsModifier && !isCursor {
+	if key.ShiftLabel != "" && !key.IsModifier && !isCursor && !isTouch {
 		if kb.ShiftActive == kb.CapsActive {
 			hintFont := r.fontSmall
 			if r.fontGlyph != nil && hasPromptfontRune(key.ShiftLabel) {
@@ -277,6 +280,10 @@ func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor bool, kb *KeyboardSt
 		r.renderText(r.fontGlyph, glyph, t.GlyphColor,
 			FRect{X: rect.X, Y: rect.Y, W: rect.W - 3, H: rect.H - 2}, AlignBottomRight)
 	}
+}
+
+func keySelectionState(pos KeyPosition, kb *KeyboardState, touchPos KeyPosition, hasTouch bool) (isCursor, isTouch bool) {
+	return pos.Row == kb.CursorRow && pos.Col == kb.CursorCol, hasTouch && pos == touchPos
 }
 
 func (r *Renderer) drawAccentPopup(kb *KeyboardState) {

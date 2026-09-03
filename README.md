@@ -10,6 +10,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 - [Features](#features)
 - [Controls](#controls)
+- [Touchscreen](#touchscreen)
 - [Usage](#usage)
 - [Installation](#installation)
   - [AUR (Arch Linux)](#aur-arch-linux)
@@ -31,6 +32,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Full QWERTY keyboard with shortcuts row (Undo, Redo, Cut, Select All, Alt+Tab, etc.)
 - Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
+- Native touchscreen input with slide selection
 - Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
@@ -69,6 +71,14 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | Shift (LT) + up/down arrow | Adjust mouse sensitivity (saved to config) |
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
+
+## Touchscreen
+
+Touch a key to highlight it, slide to another key to change selection, then lift your finger to activate the final highlighted key. Sliding into padding, a gap, or outside the window clears selection; lifting there does not activate anything. Touching modifiers such as Shift, Ctrl, Alt, Super, and Caps uses the same behavior as gamepad activation.
+
+Only first finger that touches a key controls current touch sequence. Additional fingers are ignored until first finger lifts or its sequence is canceled. Touch selection remains separate from gamepad cursor, so gamepad navigation continues without moving pending touch selection. Hiding or closing keyboard cancels pending touch.
+
+Native SDL3 touch events work on X11 and Wayland. Wayland layer-shell overlay accepts touch without keyboard focus. SDL-generated mouse events are disabled, preventing duplicate activation.
 
 ## Usage
 

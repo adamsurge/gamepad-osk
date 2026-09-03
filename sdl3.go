@@ -12,6 +12,11 @@ package main
 
 // Helper to access event.type since "type" is a Go keyword
 static Uint32 sdl_event_type(SDL_Event *e) { return e->type; }
+static Uint32 sdl_touch_window_id(SDL_Event *e) { return e->tfinger.windowID; }
+static Uint64 sdl_touch_id(SDL_Event *e) { return e->tfinger.touchID; }
+static Sint64 sdl_finger_id(SDL_Event *e) { return (Sint64)e->tfinger.fingerID; }
+static float sdl_touch_x(SDL_Event *e) { return e->tfinger.x; }
+static float sdl_touch_y(SDL_Event *e) { return e->tfinger.y; }
 
 // Helper to create a window with properties, avoiding Go/C string interop issues
 // with SDL3's #define string constants.
@@ -113,6 +118,13 @@ func SDL3GetWindowPosition(w *Window) (int32, int32) {
 	var x, y C.int
 	C.SDL_GetWindowPosition((*C.SDL_Window)(w.ptr), &x, &y)
 	return int32(x), int32(y)
+}
+
+func SDL3GetWindowID(w *Window) uint32 {
+	if w == nil || w.ptr == nil {
+		return 0
+	}
+	return uint32(C.SDL_GetWindowID((*C.SDL_Window)(w.ptr)))
 }
 
 func SDL3SetWindowOpacity(w *Window, opacity float32) {
@@ -248,19 +260,37 @@ func SDL3SurfaceHeight(s *Surface) int32 {
 
 // --- Events ---
 
-// SDL3PollEvent returns the event type and true if an event was available.
+// SDL3PollEvent returns the next event and true if an event was available.
+//
 //nolint:gocritic // dupSubExpr: false positive from cgo generated code
-func SDL3PollEvent() (uint32, bool) {
+func SDL3PollEvent() (SDLEvent, bool) {
 	var event C.SDL_Event
 	if C.SDL_PollEvent(&event) {
-		return uint32(C.sdl_event_type(&event)), true
+		eventType := uint32(C.sdl_event_type(&event))
+		result := SDLEvent{Type: eventType}
+		if isFingerEvent(eventType) {
+			result.WindowID = uint32(C.sdl_touch_window_id(&event))
+			result.TouchID = uint64(C.sdl_touch_id(&event))
+			result.FingerID = int64(C.sdl_finger_id(&event))
+			result.X = float32(C.sdl_touch_x(&event))
+			result.Y = float32(C.sdl_touch_y(&event))
+		}
+		return result, true
 	}
-	return 0, false
+	return SDLEvent{}, false
+}
+
+func isFingerEvent(eventType uint32) bool {
+	return eventType >= SDL_EVENT_FINGER_DOWN && eventType <= SDL_EVENT_FINGER_CANCELED
 }
 
 //nolint:revive // Match SDL3 naming convention
 const (
-	SDL_EVENT_QUIT uint32 = 0x100
+	SDL_EVENT_QUIT            uint32 = 0x100
+	SDL_EVENT_FINGER_DOWN     uint32 = 0x700
+	SDL_EVENT_FINGER_UP       uint32 = 0x701
+	SDL_EVENT_FINGER_MOTION   uint32 = 0x702
+	SDL_EVENT_FINGER_CANCELED uint32 = 0x703
 )
 
 // --- Display ---

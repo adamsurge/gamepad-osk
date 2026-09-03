@@ -27,21 +27,22 @@ type App struct {
 	daemon        bool
 	togglePending bool
 	lock          sync.Mutex
-	themeIdx int
-	posTop   bool // true = keyboard at top of screen
-	window   *Window
-	mon      MonitorRect // raw monitor bounds
-	posArea  MonitorRect // positioning area (workarea on X11, same as mon on Wayland)
-	winH     int32
-	winX     int32 // stored for re-apply after show
-	winY     int32
-	margin   int32
+	themeIdx      int
+	posTop        bool // true = keyboard at top of screen
+	window        *Window
+	mon           MonitorRect // raw monitor bounds
+	posArea       MonitorRect // positioning area (workarea on X11, same as mon on Wayland)
+	winH          int32
+	winX          int32 // stored for re-apply after show
+	winY          int32
+	margin        int32
+	touch         TouchInput
 
 	// Key repeat state
-	repeatAction   ActionType // action to repeat (ActionNone = inactive)
-	repeatStart    time.Time  // when key was first pressed
-	repeatLast     time.Time  // when last repeat fired
-	repeatInitial  bool       // true = still in initial delay phase
+	repeatAction  ActionType // action to repeat (ActionNone = inactive)
+	repeatStart   time.Time  // when key was first pressed
+	repeatLast    time.Time  // when last repeat fired
+	repeatInitial bool       // true = still in initial delay phase
 
 	reconnectLast time.Time // cooldown for gamepad reconnection attempts
 
@@ -88,6 +89,7 @@ func (app *App) Run() error {
 	// display, so opt out before init. On Wayland this avoids requesting
 	// idle-inhibit.
 	SDL3SetHint("SDL_VIDEO_ALLOW_SCREENSAVER", "1")
+	SDL3SetHint("SDL_TOUCH_MOUSE_EVENTS", "0")
 
 	if err := SDL3Init(SDL_INIT_VIDEO); err != nil {
 		return err
@@ -102,6 +104,7 @@ func (app *App) Run() error {
 	pad := int32(cfg.Keys.Padding) //nolint:gosec // G115: padding fits in int32
 	statusH := max32(20, int32(float64(unit)*0.4))
 	width, height := CalcWindowSize(layout, unit, pad, statusH)
+	geometry := NewKeyboardGeometry(layout, unit, pad, statusH)
 	Debugf("Monitor: %dx%d+%d+%d, scale=%d%%, unit=%d, window=%dx%d",
 		mon.W, mon.H, mon.X, mon.Y, cfg.Keys.Scale, unit, width, height)
 
@@ -171,9 +174,11 @@ func (app *App) Run() error {
 		// Position set after app fields are initialized (computeY needs them)
 	}
 	defer func() {
+		app.touch.Cancel()
 		cleanupLayerShell()
 		SDL3DestroyWindow(window)
 	}()
+	windowID := SDL3GetWindowID(window)
 
 	// Store for position toggling (must be set before computeY)
 	app.window = window
@@ -304,7 +309,7 @@ func (app *App) Run() error {
 	// Show window after everything is initialized (avoids ghost frame)
 	if app.visible {
 		if !isWayland {
-			rend.Draw(kb) // render first frame before showing (Wayland: gated by IsLayerShellReady)
+			rend.Draw(kb, &app.touch) // render first frame before showing (Wayland: gated by IsLayerShellReady)
 			SDL3ShowWindow(window)
 			if opacity < 1.0 {
 				SDL3SetWindowOpacity(window, opacity) // re-apply after show
@@ -347,6 +352,7 @@ func (app *App) Run() error {
 				}
 			} else {
 				app.stopRepeat()
+				app.touch.Cancel()
 				kb.CapsActive = false
 				kb.ShiftActive = false
 				kb.ShiftHeld = false
@@ -381,9 +387,29 @@ func (app *App) Run() error {
 		app.lock.Unlock()
 
 		// Process SDL3 window events
-		for evType, ok := SDL3PollEvent(); ok; evType, ok = SDL3PollEvent() {
-			if evType == SDL_EVENT_QUIT {
+		for event, ok := SDL3PollEvent(); ok; event, ok = SDL3PollEvent() {
+			if event.Type == SDL_EVENT_QUIT {
+				app.touch.Cancel()
 				app.running = false
+				continue
+			}
+			phase, isTouch := touchPhaseFromSDLEvent(event.Type)
+			if !isTouch || !app.visible {
+				continue
+			}
+			activate, changed := app.touch.Handle(TouchEvent{
+				Phase:    phase,
+				WindowID: event.WindowID,
+				TouchID:  event.TouchID,
+				FingerID: event.FingerID,
+				X:        event.X,
+				Y:        event.Y,
+			}, windowID, width, height, geometry)
+			if activate != nil {
+				kb.PressAt(*activate, inj)
+			}
+			if changed {
+				rend.MarkDirty()
 			}
 		}
 
@@ -463,7 +489,7 @@ func (app *App) Run() error {
 
 		// Render
 		if app.visible {
-			rend.Draw(kb)
+			rend.Draw(kb, &app.touch)
 		}
 
 		// Frame pacing: vsync in rend.Draw handles active rendering.
@@ -606,6 +632,7 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		}
 		SavePosition(app.posTop)
 	case ActionClose:
+		app.touch.Cancel()
 		if app.daemon {
 			// Daemon mode: close button hides instead of exiting
 			app.lock.Lock()
@@ -616,6 +643,21 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 		app.stopRepeat()
 		app.running = false
 		return
+	}
+}
+
+func touchPhaseFromSDLEvent(eventType uint32) (TouchPhase, bool) {
+	switch eventType {
+	case SDL_EVENT_FINGER_DOWN:
+		return TouchDown, true
+	case SDL_EVENT_FINGER_MOTION:
+		return TouchMotion, true
+	case SDL_EVENT_FINGER_UP:
+		return TouchUp, true
+	case SDL_EVENT_FINGER_CANCELED:
+		return TouchCanceled, true
+	default:
+		return 0, false
 	}
 }
 

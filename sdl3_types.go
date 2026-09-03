@@ -12,6 +12,15 @@ type Rect struct{ X, Y, W, H int32 }
 // SDL3 render functions use FRect instead of Rect.
 type FRect struct{ X, Y, W, H float32 }
 
+type SDLEvent struct {
+	Type     uint32
+	WindowID uint32
+	TouchID  uint64
+	FingerID int64
+	X        float32
+	Y        float32
+}
+
 // Opaque handle types wrapping C pointers from SDL3.
 // These are never dereferenced in Go - only passed back to cgo wrappers.
 
