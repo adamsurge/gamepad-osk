@@ -99,15 +99,16 @@ func (r *Renderer) Draw(kb *KeyboardState) {
 	r.drawModifierBar(kb)
 
 	// Draw keyboard rows
-	y := r.pad + r.statusH
+	geometry := NewKeyboardGeometry(kb.Layout, r.unit, r.pad, r.statusH)
 	for ri, row := range kb.Layout {
-		x := r.pad
 		for ci, key := range row {
+			rect, ok := geometry.KeyRect(KeyPosition{Row: ri, Col: ci})
+			if !ok {
+				continue
+			}
 			isCursor := ri == kb.CursorRow && ci == kb.CursorCol
-			r.drawKey(key, x, y, isCursor, kb)
-			x += int32(key.Width*float64(r.unit)) + r.pad
+			r.drawKey(key, rect, isCursor, kb)
 		}
-		y += r.unit + r.pad
 	}
 
 	// Accent popup
@@ -219,10 +220,7 @@ func (r *Renderer) cachedText(font *Font, text string, color Color) texCacheEntr
 	return entry
 }
 
-func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardState) {
-	w := int32(key.Width * float64(r.unit))
-	h := r.unit
-	rect := FRect{X: float32(x), Y: float32(y), W: float32(w), H: float32(h)}
+func (r *Renderer) drawKey(key KeyDef, rect FRect, isCursor bool, kb *KeyboardState) {
 	t := r.theme
 
 	flashed := kb.IsFlashed(key)
@@ -270,28 +268,27 @@ func (r *Renderer) drawKey(key KeyDef, x, y int32, isCursor bool, kb *KeyboardSt
 				hintFont = r.fontGlyph
 			}
 			r.renderText(hintFont, key.ShiftLabel, t.ModifierText,
-				FRect{X: float32(x), Y: float32(y), W: float32(w - 4), H: float32(h)}, AlignTopRight)
+				FRect{X: rect.X, Y: rect.Y, W: rect.W - 4, H: rect.H}, AlignTopRight)
 		}
 	}
 
 	// Controller glyph (bottom-right)
 	if glyph, ok := KeyGlyphs[key.Code]; ok && r.fontGlyph != nil {
 		r.renderText(r.fontGlyph, glyph, t.GlyphColor,
-			FRect{X: float32(x), Y: float32(y), W: float32(w - 3), H: float32(h - 2)}, AlignBottomRight)
+			FRect{X: rect.X, Y: rect.Y, W: rect.W - 3, H: rect.H - 2}, AlignBottomRight)
 	}
 }
 
 func (r *Renderer) drawAccentPopup(kb *KeyboardState) {
 	accents := kb.AccentPopup.Accents
 	sel := kb.AccentPopup.Selected
-	row := kb.Layout[kb.CursorRow]
-
-	xo := r.pad
-	for i := range kb.CursorCol {
-		xo += int32(row[i].Width*float64(r.unit)) + r.pad
+	geometry := NewKeyboardGeometry(kb.Layout, r.unit, r.pad, r.statusH)
+	keyRect, ok := geometry.KeyRect(KeyPosition{Row: kb.CursorRow, Col: kb.CursorCol})
+	if !ok {
+		return
 	}
-	ky := r.pad + r.statusH + int32(kb.CursorRow)*(r.unit+r.pad) //nolint:gosec // G115: cursor index fits in int32
-	py := ky - r.unit - r.pad
+	xo := int32(keyRect.X)
+	py := int32(keyRect.Y) - r.unit - r.pad
 
 	tw := int32(len(accents))*(r.unit+r.pad) + r.pad //nolint:gosec // G115: accent count fits in int32
 	pr := FRect{X: float32(xo), Y: float32(py), W: float32(tw), H: float32(r.unit + r.pad*2)}
@@ -420,21 +417,6 @@ func CalcUnitSize(layout [][]KeyDef, screenWidth int32, cfg Config) int32 {
 		unit = 30
 	}
 	return int32(unit)
-}
-
-func CalcWindowSize(layout [][]KeyDef, unit, pad, statusH int32) (int32, int32) {
-	var maxW int32
-	for _, row := range layout {
-		rw := pad
-		for _, key := range row {
-			rw += int32(key.Width*float64(unit)) + pad
-		}
-		if rw > maxW {
-			maxW = rw
-		}
-	}
-	h := pad + statusH + int32(len(layout))*(unit+pad) //nolint:gosec // G115: layout row count fits in int32
-	return maxW, h
 }
 
 func setColor(r *SDLRenderer, c Color) {
