@@ -14,6 +14,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - [Usage](#usage)
 - [Installation](#installation)
   - [AUR (Arch Linux)](#aur-arch-linux)
+  - [Nix / NixOS](#nix--nixos)
   - [Pre-built binary (x86_64)](#pre-built-binary-x86_64)
   - [From source](#from-source)
   - [Bazzite / Immutable Fedora](#bazzite--immutable-fedora)
@@ -126,6 +127,63 @@ To auto-update `-git` packages when upstream changes, enable devel checking:
 ```bash
 yay --devel --save
 ```
+
+### Nix / NixOS
+
+The flake supports `x86_64-linux` and `aarch64-linux`.
+
+```bash
+nix build
+nix run . -- --version
+nix flake check
+nix develop -c go test ./...
+```
+
+The dev shell has Go and cgo deps (SDL3, SDL3_ttf, Wayland, X11) pinned for you. The packaged binary ships with a default config, systemd user service, udev rules, and a Nix-store DejaVu font. To use your own fonts, set `GAMEPAD_OSK_FONT_DIRS=/first/dir:/second/dir`.
+
+**NixOS module** — installs the package system-wide and registers the udev rules. It won't set up a user config or service for you.
+
+```nix
+{
+  inputs.gamepad-osk.url = "github:0x90shell/gamepad-osk";
+  outputs = { nixpkgs, gamepad-osk, ... }: {
+    nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        gamepad-osk.nixosModules.default
+        ({ pkgs, ... }: {
+          programs.gamepad-osk = {
+            enable = true;
+            package = gamepad-osk.packages.${pkgs.system}.default;
+          };
+          users.users.my-user.extraGroups = [ "input" ];
+        })
+      ];
+    };
+  };
+}
+```
+
+**Home Manager module** — handles the user package, INI config, and (optionally) a graphical-session service.
+
+```nix
+{
+  imports = [ inputs.gamepad-osk.homeManagerModules.default ];
+  programs.gamepad-osk = {
+    enable = true;
+    package = inputs.gamepad-osk.packages.${pkgs.system}.default;
+    settings = {
+      theme.name = "matrix";
+      window.position = "bottom";
+      gamepad.toggle_combo = "guide+a";
+      "gamepad.buttons".press = "a";
+    };
+    service.enable = true;
+  };
+}
+```
+
+`settings` maps onto the INI sections/keys from `config.example` — leave a key out and it falls back to the app default. Home Manager writes `~/.config/gamepad-osk/config` as read-only, so in-app theme/position/sensitivity changes won't stick around; edit `settings` and re-run `home-manager switch` instead.
 
 ### Pre-built binary (x86_64)
 
