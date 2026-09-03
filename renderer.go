@@ -11,8 +11,8 @@ import (
 const promptFontPath = "/usr/share/fonts/TTF/promptfont.ttf"
 
 type texCacheKey struct {
-	text string
-	font uintptr // font pointer as identity
+	text  string
+	font  uintptr // font pointer as identity
 	color Color
 }
 
@@ -450,7 +450,7 @@ func findFont(names ...string) string {
 		"/usr/share/fonts",
 	}
 	filePatterns := map[string][]string{
-		"DejaVu Sans":    {"DejaVuSans.ttf"},
+		"DejaVu Sans":     {"DejaVuSans.ttf"},
 		"Liberation Sans": {"LiberationSans-Regular.ttf"},
 		"FreeSans":        {"FreeSans.ttf"},
 	}
