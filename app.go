@@ -90,6 +90,7 @@ func (app *App) Run() error {
 	// idle-inhibit.
 	SDL3SetHint("SDL_VIDEO_ALLOW_SCREENSAVER", "1")
 	SDL3SetHint("SDL_TOUCH_MOUSE_EVENTS", "0")
+	SDL3SetHint("SDL_MOUSE_TOUCH_EVENTS", "0")
 
 	if err := SDL3Init(SDL_INIT_VIDEO); err != nil {
 		return err
@@ -393,18 +394,14 @@ func (app *App) Run() error {
 				app.running = false
 				continue
 			}
-			phase, isTouch := touchPhaseFromSDLEvent(event.Type)
-			if !isTouch || !app.visible {
+			if !app.visible {
 				continue
 			}
-			activate, changed := app.touch.Handle(TouchEvent{
-				Phase:    phase,
-				WindowID: event.WindowID,
-				TouchID:  event.TouchID,
-				FingerID: event.FingerID,
-				X:        event.X,
-				Y:        event.Y,
-			}, windowID, width, height, geometry)
+			touchEvent, ok := pointerEventFromSDLEvent(event, width, height)
+			if !ok {
+				continue
+			}
+			activate, changed := app.touch.Handle(touchEvent, windowID, width, height, geometry)
 			if activate != nil {
 				kb.PressAt(*activate, inj)
 			}
@@ -659,6 +656,53 @@ func touchPhaseFromSDLEvent(eventType uint32) (TouchPhase, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func pointerEventFromSDLEvent(event SDLEvent, width, height int32) (TouchEvent, bool) {
+	if phase, ok := touchPhaseFromSDLEvent(event.Type); ok {
+		return TouchEvent{
+			Source:   PointerTouch,
+			Phase:    phase,
+			WindowID: event.WindowID,
+			TouchID:  event.TouchID,
+			FingerID: event.FingerID,
+			X:        event.X,
+			Y:        event.Y,
+		}, true
+	}
+	return mouseEventFromSDLEvent(event, width, height)
+}
+
+func mouseEventFromSDLEvent(event SDLEvent, width, height int32) (TouchEvent, bool) {
+	if width <= 0 || height <= 0 || !finiteCoordinate(event.X) || !finiteCoordinate(event.Y) {
+		return TouchEvent{}, false
+	}
+
+	var phase TouchPhase
+	switch event.Type {
+	case SDL_EVENT_MOUSE_MOTION:
+		phase = TouchMotion
+	case SDL_EVENT_MOUSE_BUTTON_DOWN:
+		if event.Button != SDL_BUTTON_LEFT {
+			return TouchEvent{}, false
+		}
+		phase = TouchDown
+	case SDL_EVENT_MOUSE_BUTTON_UP:
+		if event.Button != SDL_BUTTON_LEFT {
+			return TouchEvent{}, false
+		}
+		phase = TouchUp
+	default:
+		return TouchEvent{}, false
+	}
+
+	return TouchEvent{
+		Source:   PointerMouse,
+		Phase:    phase,
+		WindowID: event.WindowID,
+		X:        event.X / float32(width),
+		Y:        event.Y / float32(height),
+	}, true
 }
 
 // computeY returns the window Y position based on current fullscreen state.

@@ -10,7 +10,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 - [Features](#features)
 - [Controls](#controls)
-- [Touchscreen](#touchscreen)
+- [Touchscreen and mouse](#touchscreen-and-mouse)
 - [Usage](#usage)
 - [Installation](#installation)
   - [AUR (Arch Linux)](#aur-arch-linux)
@@ -34,6 +34,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Native Wayland overlay via wlr-layer-shell (Sway, Hyprland, KDE, COSMIC - no compositor rules needed)
 - Evdev gamepad input (works with any controller)
 - Native multi-contact touchscreen input with independent slide selection
+- Native left-mouse key selection, dragging, and release activation
 - Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
@@ -73,15 +74,17 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
 
-## Touchscreen
+## Touchscreen and mouse
 
 Touch one or more keys to highlight them independently. Each contact can slide to a different key, then activates whichever key it's over when lifted. Sliding into padding, a gap, or outside the window clears that contact's selection only - lifting there activates nothing. If multiple contacts land on the same key, it stays highlighted until the last one leaves, and each contact activates it once on lift.
 
-Touch selection uses the theme's pressed-key colour, distinct from the gamepad cursor highlight. Touch takes visual precedence when both inputs select the same key. Gamepad navigation won't disturb any pending touch selections. Hiding or closing the keyboard cancels all pending touches.
+Click and hold a key with left mouse button to select it, drag between keys to change selection, then release to activate selected key. Releasing outside selected key cancels click. Right and middle buttons do not activate keyboard keys. Mouse and touch selections remain independent.
+
+Touch and mouse selection use the theme's pressed-key colour, distinct from the gamepad cursor highlight. Pointer selection takes visual precedence when both inputs select the same key. Gamepad navigation won't disturb pending pointer selections. Hiding or closing the keyboard cancels pending pointer selections.
 
 Keys commit in the order fingers are released - this applies to modifiers too, so releasing Shift before a letter applies it, releasing the letter first types it unmodified. For held Shift, use gamepad LT.
 
-Native SDL3 touch events work on both X11 and Wayland, and the Wayland layer-shell overlay accepts touch without needing keyboard focus. SDL-generated mouse events are disabled to prevent duplicate activation.
+Native SDL3 touch and mouse events work on both X11 and Wayland. The Wayland layer-shell overlay accepts pointer input without keyboard focus. SDL synthetic cross-device events are disabled to prevent duplicate activation.
 
 ## Usage
 

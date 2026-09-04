@@ -9,7 +9,15 @@ const (
 	TouchCanceled
 )
 
+type PointerSource uint8
+
+const (
+	PointerTouch PointerSource = iota
+	PointerMouse
+)
+
 type TouchEvent struct {
+	Source   PointerSource
 	Phase    TouchPhase
 	WindowID uint32
 	TouchID  uint64
@@ -19,6 +27,7 @@ type TouchEvent struct {
 }
 
 type TouchContact struct {
+	Source   PointerSource
 	TouchID  uint64
 	FingerID int64
 }
@@ -116,7 +125,7 @@ func (t *TouchInput) Cancel() bool {
 }
 
 func contactFromEvent(event TouchEvent) TouchContact {
-	return TouchContact{TouchID: event.TouchID, FingerID: event.FingerID}
+	return TouchContact{Source: event.Source, TouchID: event.TouchID, FingerID: event.FingerID}
 }
 
 func setTouchSelection(sequence *TouchSequence, pos KeyPosition, ok bool) bool {

@@ -17,6 +17,13 @@ static Uint64 sdl_touch_id(SDL_Event *e) { return e->tfinger.touchID; }
 static Sint64 sdl_finger_id(SDL_Event *e) { return (Sint64)e->tfinger.fingerID; }
 static float sdl_touch_x(SDL_Event *e) { return e->tfinger.x; }
 static float sdl_touch_y(SDL_Event *e) { return e->tfinger.y; }
+static Uint32 sdl_mouse_motion_window_id(SDL_Event *e) { return e->motion.windowID; }
+static float sdl_mouse_motion_x(SDL_Event *e) { return e->motion.x; }
+static float sdl_mouse_motion_y(SDL_Event *e) { return e->motion.y; }
+static Uint32 sdl_mouse_button_window_id(SDL_Event *e) { return e->button.windowID; }
+static Uint8 sdl_mouse_button(SDL_Event *e) { return e->button.button; }
+static float sdl_mouse_button_x(SDL_Event *e) { return e->button.x; }
+static float sdl_mouse_button_y(SDL_Event *e) { return e->button.y; }
 
 // Helper to create a window with properties, avoiding Go/C string interop issues
 // with SDL3's #define string constants.
@@ -274,6 +281,15 @@ func SDL3PollEvent() (SDLEvent, bool) {
 			result.FingerID = int64(C.sdl_finger_id(&event))
 			result.X = float32(C.sdl_touch_x(&event))
 			result.Y = float32(C.sdl_touch_y(&event))
+		} else if eventType == SDL_EVENT_MOUSE_MOTION {
+			result.WindowID = uint32(C.sdl_mouse_motion_window_id(&event))
+			result.X = float32(C.sdl_mouse_motion_x(&event))
+			result.Y = float32(C.sdl_mouse_motion_y(&event))
+		} else if isMouseButtonEvent(eventType) {
+			result.WindowID = uint32(C.sdl_mouse_button_window_id(&event))
+			result.Button = uint8(C.sdl_mouse_button(&event))
+			result.X = float32(C.sdl_mouse_button_x(&event))
+			result.Y = float32(C.sdl_mouse_button_y(&event))
 		}
 		return result, true
 	}
@@ -284,13 +300,22 @@ func isFingerEvent(eventType uint32) bool {
 	return eventType >= SDL_EVENT_FINGER_DOWN && eventType <= SDL_EVENT_FINGER_CANCELED
 }
 
+func isMouseButtonEvent(eventType uint32) bool {
+	return eventType == SDL_EVENT_MOUSE_BUTTON_DOWN || eventType == SDL_EVENT_MOUSE_BUTTON_UP
+}
+
 //nolint:revive // Match SDL3 naming convention
 const (
-	SDL_EVENT_QUIT            uint32 = 0x100
-	SDL_EVENT_FINGER_DOWN     uint32 = 0x700
-	SDL_EVENT_FINGER_UP       uint32 = 0x701
-	SDL_EVENT_FINGER_MOTION   uint32 = 0x702
-	SDL_EVENT_FINGER_CANCELED uint32 = 0x703
+	SDL_EVENT_QUIT              uint32 = 0x100
+	SDL_EVENT_FINGER_DOWN       uint32 = 0x700
+	SDL_EVENT_FINGER_UP         uint32 = 0x701
+	SDL_EVENT_FINGER_MOTION     uint32 = 0x702
+	SDL_EVENT_FINGER_CANCELED   uint32 = 0x703
+	SDL_EVENT_MOUSE_MOTION      uint32 = 0x400
+	SDL_EVENT_MOUSE_BUTTON_DOWN uint32 = 0x401
+	SDL_EVENT_MOUSE_BUTTON_UP   uint32 = 0x402
+
+	SDL_BUTTON_LEFT uint8 = 1
 )
 
 // --- Display ---
