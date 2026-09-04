@@ -1,9 +1,15 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.programs.gamepad-osk;
   iniFormat = pkgs.formats.ini { };
-in {
+in
+{
   options.programs.gamepad-osk = {
     enable = lib.mkEnableOption "gamepad-osk";
 
@@ -27,18 +33,26 @@ in {
     };
 
     service.enable = lib.mkEnableOption "gamepad-osk graphical-session user service";
+
+    service.systemdTargets = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ config.wayland.systemd.target ];
+      defaultText = lib.literalExpression "[ config.wayland.systemd.target ]";
+      example = [ "niri.service" ];
+      description = "Systemd targets to bind the gamepad-osk service to.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
     home.packages = [ cfg.package ];
 
-    xdg.configFile."gamepad-osk/config".source =
-      iniFormat.generate "gamepad-osk-config" cfg.settings;
+    xdg.configFile."gamepad-osk/config".source = iniFormat.generate "gamepad-osk-config" cfg.settings;
 
     systemd.user.services.gamepad-osk = lib.mkIf cfg.service.enable {
       Unit = {
         Description = "gamepad-osk - Gamepad on-screen keyboard";
-        After = [ "graphical-session.target" ];
+        After = cfg.service.systemdTargets;
+        PartOf = cfg.service.systemdTargets;
       };
       Service = {
         Type = "simple";
@@ -47,7 +61,7 @@ in {
         Restart = "on-failure";
         RestartSec = 5;
       };
-      Install.WantedBy = [ "graphical-session.target" ];
+      Install.WantedBy = cfg.service.systemdTargets;
     };
   };
 }

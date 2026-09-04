@@ -1,8 +1,14 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.programs.gamepad-osk;
-in {
+in
+{
   options.programs.gamepad-osk = {
     enable = lib.mkEnableOption "gamepad-osk";
 

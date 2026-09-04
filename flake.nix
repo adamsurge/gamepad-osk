@@ -9,19 +9,32 @@
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, home-manager, ... }:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      home-manager,
+      ...
+    }:
     let
-      systems = [ "x86_64-linux" "aarch64-linux" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
-    in {
-      packages = forAllSystems (system:
+    in
+    {
+      packages = forAllSystems (
+        system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           gamepad-osk = pkgs.callPackage ./nix/package.nix { };
-        in {
+        in
+        {
           inherit gamepad-osk;
           default = gamepad-osk;
-        });
+        }
+      );
 
       apps = forAllSystems (system: {
         default = {
@@ -31,7 +44,8 @@
         };
       });
 
-      checks = forAllSystems (system:
+      checks = forAllSystems (
+        system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           moduleChecks = import ./nix/module-tests.nix {
@@ -40,22 +54,29 @@
             nixosModule = self.nixosModules.default;
             homeManagerModule = self.homeManagerModules.default;
           };
-        in {
+        in
+        {
           gamepad-osk = self.packages.${system}.default;
           inherit (moduleChecks) nixos-module home-manager-module;
-        });
+        }
+      );
 
-      devShells = forAllSystems (system:
+      devShells = forAllSystems (
+        system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           package = self.packages.${system}.default;
-        in {
+        in
+        {
           default = pkgs.mkShell {
             inputsFrom = [ package ];
             packages = [ pkgs.go_1_26 ];
             GAMEPAD_OSK_FONT_DIRS = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVu";
           };
-        });
+        }
+      );
+
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
 
       nixosModules.default = import ./nix/nixos-module.nix;
       homeManagerModules.default = import ./nix/home-manager-module.nix;
