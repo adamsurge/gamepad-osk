@@ -17,17 +17,32 @@ buildGo126Module rec {
 
   src = lib.cleanSourceWith {
     src = ../.;
-    filter = path: type:
-      let name = baseNameOf path;
-      in name != ".git" && name != ".opencode" && name != "result";
+    filter =
+      path: _type:
+      let
+        name = baseNameOf path;
+      in
+      name != ".git" && name != ".opencode" && name != "result";
   };
 
   vendorHash = null;
 
-  nativeBuildInputs = [ makeWrapper pkg-config ];
-  buildInputs = [ sdl3 sdl3-ttf wayland libX11 ];
+  nativeBuildInputs = [
+    makeWrapper
+    pkg-config
+  ];
+  buildInputs = [
+    sdl3
+    sdl3-ttf
+    wayland
+    libX11
+  ];
 
-  ldflags = [ "-s" "-w" "-X main.version=${version}" ];
+  ldflags = [
+    "-s"
+    "-w"
+    "-X main.version=${version}"
+  ];
   doCheck = true;
 
   postInstall = ''
