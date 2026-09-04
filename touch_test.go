@@ -134,6 +134,129 @@ func TestTouchCompositeIdentityDistinguishesDevices(t *testing.T) {
 	}
 }
 
+func TestMouseAndTouchContactsRemainIndependent(t *testing.T) {
+	geometry, width, height := testTouchGeometry()
+	var touch TouchInput
+	touchPos := KeyPosition{Row: 0, Col: 0}
+	mousePos := KeyPosition{Row: 0, Col: 1}
+
+	touch.Handle(touchEventAt(t, TouchDown, 10, 20, 30, touchPos, geometry, width, height), 10, width, height, geometry)
+	mouseDown, ok := mouseEventFromSDLEvent(mouseSDLEventAt(t, SDL_EVENT_MOUSE_BUTTON_DOWN, 10, mousePos, geometry), width, height)
+	if !ok {
+		t.Fatal("mouse button down was not converted")
+	}
+	if activate, changed := touch.Handle(mouseDown, 10, width, height, geometry); activate != nil || !changed {
+		t.Fatalf("mouse down = %v, %v; want nil, true", activate, changed)
+	}
+	if !touch.IsSelected(touchPos) || !touch.IsSelected(mousePos) || len(touch.contacts) != 2 {
+		t.Fatalf("contacts = %#v; want independent touch and mouse selections", touch.contacts)
+	}
+
+	mouseUp, ok := mouseEventFromSDLEvent(mouseSDLEventAt(t, SDL_EVENT_MOUSE_BUTTON_UP, 10, mousePos, geometry), width, height)
+	if !ok {
+		t.Fatal("mouse button up was not converted")
+	}
+	activate, changed := touch.Handle(mouseUp, 10, width, height, geometry)
+	if activate == nil || *activate != mousePos || !changed {
+		t.Fatalf("mouse up = %v, %v; want %v, true", activate, changed, mousePos)
+	}
+	if !touch.IsSelected(touchPos) || len(touch.contacts) != 1 {
+		t.Errorf("mouse release changed touch contact: %#v", touch.contacts)
+	}
+}
+
+func TestMouseDragAndInvalidRelease(t *testing.T) {
+	geometry, width, height := testTouchGeometry()
+	first := KeyPosition{Row: 0, Col: 0}
+	final := KeyPosition{Row: 0, Col: 1}
+	var touch TouchInput
+
+	for _, event := range []SDLEvent{
+		mouseSDLEventAt(t, SDL_EVENT_MOUSE_BUTTON_DOWN, 10, first, geometry),
+		mouseSDLEventAt(t, SDL_EVENT_MOUSE_MOTION, 10, final, geometry),
+	} {
+		pointer, ok := mouseEventFromSDLEvent(event, width, height)
+		if !ok {
+			t.Fatalf("mouseEventFromSDLEvent(%#v) returned false", event)
+		}
+		if activate, changed := touch.Handle(pointer, 10, width, height, geometry); activate != nil || !changed {
+			t.Fatalf("Handle(%#v) = %v, %v; want nil, true", pointer, activate, changed)
+		}
+	}
+	if touch.IsSelected(first) || !touch.IsSelected(final) {
+		t.Fatalf("mouse drag contacts = %#v; want %v selected", touch.contacts, final)
+	}
+
+	release, ok := mouseEventFromSDLEvent(mouseSDLEventAt(t, SDL_EVENT_MOUSE_BUTTON_UP, 10, final, geometry), width, height)
+	if !ok {
+		t.Fatal("mouse button up was not converted")
+	}
+	activate, changed := touch.Handle(release, 10, width, height, geometry)
+	if activate == nil || *activate != final || !changed {
+		t.Fatalf("mouse release = %v, %v; want %v, true", activate, changed, final)
+	}
+	kb := NewKeyboardState(LayoutQWERTY)
+	startRow, startCol := kb.CursorRow, kb.CursorCol
+	if !kb.PressAt(*activate, nil) {
+		t.Fatal("mouse activation did not press selected key")
+	}
+	if kb.CursorRow != startRow || kb.CursorCol != startCol {
+		t.Errorf("mouse activation moved cursor to (%d, %d)", kb.CursorRow, kb.CursorCol)
+	}
+	if activate, changed := touch.Handle(release, 10, width, height, geometry); activate != nil || changed {
+		t.Errorf("duplicate mouse release = %v, %v; want ignored", activate, changed)
+	}
+
+	down, _ := mouseEventFromSDLEvent(mouseSDLEventAt(t, SDL_EVENT_MOUSE_BUTTON_DOWN, 10, first, geometry), width, height)
+	touch.Handle(down, 10, width, height, geometry)
+	outside, ok := mouseEventFromSDLEvent(SDLEvent{Type: SDL_EVENT_MOUSE_BUTTON_UP, WindowID: 10, Button: SDL_BUTTON_LEFT, X: -1, Y: 0}, width, height)
+	if !ok {
+		t.Fatal("outside mouse release was not converted")
+	}
+	if activate, changed := touch.Handle(outside, 10, width, height, geometry); activate != nil || !changed || len(touch.contacts) != 0 {
+		t.Errorf("outside mouse release = %v, %v, %#v; want nil, true, empty", activate, changed, touch.contacts)
+	}
+}
+
+func TestMouseEventConversionRejectsInvalidSequences(t *testing.T) {
+	geometry, width, height := testTouchGeometry()
+	valid := mouseSDLEventAt(t, SDL_EVENT_MOUSE_BUTTON_DOWN, 10, KeyPosition{Row: 0, Col: 0}, geometry)
+
+	tests := []struct {
+		name         string
+		event        SDLEvent
+		windowWidth  int32
+		windowHeight int32
+	}{
+		{name: "right button", event: SDLEvent{Type: SDL_EVENT_MOUSE_BUTTON_DOWN, WindowID: 10, Button: 3, X: valid.X, Y: valid.Y}, windowWidth: width, windowHeight: height},
+		{name: "unknown event", event: SDLEvent{Type: SDL_EVENT_QUIT, WindowID: 10, X: valid.X, Y: valid.Y}, windowWidth: width, windowHeight: height},
+		{name: "zero width", event: valid, windowHeight: height},
+		{name: "zero height", event: valid, windowWidth: width},
+		{name: "non-finite coordinate", event: SDLEvent{Type: SDL_EVENT_MOUSE_MOTION, WindowID: 10, X: float32(math.NaN()), Y: valid.Y}, windowWidth: width, windowHeight: height},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if event, ok := mouseEventFromSDLEvent(tt.event, tt.windowWidth, tt.windowHeight); ok {
+				t.Errorf("mouseEventFromSDLEvent() = %#v, true; want false", event)
+			}
+		})
+	}
+
+	var touch TouchInput
+	motion, ok := mouseEventFromSDLEvent(mouseSDLEventAt(t, SDL_EVENT_MOUSE_MOTION, 10, KeyPosition{Row: 0, Col: 0}, geometry), width, height)
+	if !ok {
+		t.Fatal("mouse motion was not converted")
+	}
+	if activate, changed := touch.Handle(motion, 10, width, height, geometry); activate != nil || changed {
+		t.Errorf("orphan mouse motion = %v, %v; want ignored", activate, changed)
+	}
+
+	wrongWindow, _ := mouseEventFromSDLEvent(valid, width, height)
+	if activate, changed := touch.Handle(wrongWindow, 11, width, height, geometry); activate != nil || changed {
+		t.Errorf("wrong-window mouse down = %v, %v; want ignored", activate, changed)
+	}
+}
+
 func TestTouchDuplicateDownDoesNotReplaceSequence(t *testing.T) {
 	geometry, width, height := testTouchGeometry()
 	var touch TouchInput
@@ -339,11 +462,27 @@ func touchEventAt(
 		t.Fatalf("KeyRect(%v) returned false", pos)
 	}
 	return TouchEvent{
+		Source:   PointerTouch,
 		Phase:    phase,
 		WindowID: windowID,
 		TouchID:  touchID,
 		FingerID: fingerID,
 		X:        (rect.X + rect.W/2) / float32(width),
 		Y:        (rect.Y + rect.H/2) / float32(height),
+	}
+}
+
+func mouseSDLEventAt(t *testing.T, eventType uint32, windowID uint32, pos KeyPosition, geometry KeyboardGeometry) SDLEvent {
+	t.Helper()
+	rect, ok := geometry.KeyRect(pos)
+	if !ok {
+		t.Fatalf("KeyRect(%v) returned false", pos)
+	}
+	return SDLEvent{
+		Type:     eventType,
+		WindowID: windowID,
+		Button:   SDL_BUTTON_LEFT,
+		X:        rect.X + rect.W/2,
+		Y:        rect.Y + rect.H/2,
 	}
 }
