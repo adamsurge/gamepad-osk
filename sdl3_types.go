@@ -17,6 +17,7 @@ type SDLEvent struct {
 	WindowID uint32
 	TouchID  uint64
 	FingerID int64
+	Button   uint8
 	X        float32
 	Y        float32
 }
