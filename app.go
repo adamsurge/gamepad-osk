@@ -405,11 +405,11 @@ func (app *App) Run() error {
 			activate, changed := app.touch.Handle(touchEvent, windowID, width, height, geometry)
 			if cfg.Keys.PointerBackspaceRepeat && changed && touchEvent.Phase == TouchDown {
 				if pos, ok := keyPositionForCode(kb, KEY_BACKSPACE); ok && app.touch.StartRepeat(touchEvent, pos, time.Now()) {
-					kb.PressAt(pos, inj)
+					pressPointerKey(kb, pos, inj)
 				}
 			}
 			if activate != nil && !repeating {
-				kb.PressAt(*activate, inj)
+				pressPointerKey(kb, *activate, inj)
 			}
 			if changed {
 				rend.MarkDirty()
@@ -537,6 +537,13 @@ func (app *App) Run() error {
 		}
 	}
 	return nil
+}
+
+func pressPointerKey(kb *KeyboardState, pos KeyPosition, inj *Injector) bool {
+	if !kb.SetCursor(pos) {
+		return false
+	}
+	return kb.PressAt(pos, inj)
 }
 
 func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *Renderer) {

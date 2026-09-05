@@ -73,6 +73,20 @@ func (kb *KeyboardState) Navigate(dx, dy int) {
 	}
 }
 
+// SetCursor positions gamepad navigation at a valid layout key.
+func (kb *KeyboardState) SetCursor(pos KeyPosition) bool {
+	if pos.Row < 0 || pos.Row >= len(kb.Layout) {
+		return false
+	}
+	if pos.Col < 0 || pos.Col >= len(kb.Layout[pos.Row]) {
+		return false
+	}
+	kb.CursorRow = pos.Row
+	kb.CursorCol = pos.Col
+	kb.targetXSet = false
+	return true
+}
+
 func (kb *KeyboardState) keyCenterX(rowIdx, colIdx int) float64 {
 	x := 0.0
 	for i, key := range kb.Layout[rowIdx] {

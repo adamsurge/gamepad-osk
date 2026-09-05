@@ -89,6 +89,34 @@ func TestNavigate_HorizontalClearsTargetX(t *testing.T) {
 	}
 }
 
+func TestSetCursorValidatesPositionAndClearsTargetX(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	kb.Navigate(0, 1)
+	if !kb.targetXSet {
+		t.Fatal("targetXSet should be true before explicit positioning")
+	}
+
+	want := KeyPosition{Row: 3, Col: 1}
+	if !kb.SetCursor(want) {
+		t.Fatal("SetCursor returned false for valid position")
+	}
+	if kb.CursorRow != want.Row || kb.CursorCol != want.Col {
+		t.Errorf("cursor = (%d, %d); want (%d, %d)", kb.CursorRow, kb.CursorCol, want.Row, want.Col)
+	}
+	if kb.targetXSet {
+		t.Error("SetCursor did not clear targetXSet")
+	}
+
+	for _, pos := range []KeyPosition{{Row: -1, Col: 0}, {Row: len(kb.Layout), Col: 0}, {Row: 0, Col: -1}, {Row: 0, Col: len(kb.Layout[0])}} {
+		if kb.SetCursor(pos) {
+			t.Errorf("SetCursor(%v) accepted invalid position", pos)
+		}
+	}
+	if kb.CursorRow != want.Row || kb.CursorCol != want.Col {
+		t.Errorf("invalid SetCursor changed cursor to (%d, %d)", kb.CursorRow, kb.CursorCol)
+	}
+}
+
 func TestNavigate_AccentPopup(t *testing.T) {
 	kb := NewKeyboardState(LayoutQWERTY)
 	kb.AccentPopup = &AccentPopupState{
