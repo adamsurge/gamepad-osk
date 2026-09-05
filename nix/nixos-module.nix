@@ -14,8 +14,10 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ./package.nix { };
-      defaultText = lib.literalExpression "pkgs.callPackage ./nix/package.nix { }";
+      default = pkgs.callPackage ./package.nix {
+        promptfont = pkgs.callPackage ./promptfont.nix { };
+      };
+      defaultText = lib.literalExpression "pkgs.callPackage ./nix/package.nix { promptfont = pkgs.callPackage ./nix/promptfont.nix { }; }";
       description = "gamepad-osk package to install.";
     };
   };
@@ -23,5 +25,6 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ];
     services.udev.packages = [ cfg.package ];
+    boot.kernelModules = [ "uinput" ];
   };
 }

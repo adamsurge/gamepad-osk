@@ -15,8 +15,10 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ./package.nix { };
-      defaultText = lib.literalExpression "pkgs.callPackage ./nix/package.nix { }";
+      default = pkgs.callPackage ./package.nix {
+        promptfont = pkgs.callPackage ./promptfont.nix { };
+      };
+      defaultText = lib.literalExpression "pkgs.callPackage ./nix/package.nix { promptfont = pkgs.callPackage ./nix/promptfont.nix { }; }";
       description = "gamepad-osk package to use.";
     };
 
