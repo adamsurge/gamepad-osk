@@ -16,7 +16,8 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
   - [AUR (Arch Linux)](#aur-arch-linux)
   - [Nix / NixOS](#nix--nixos)
   - [Pre-built binary (x86_64)](#pre-built-binary-x86_64)
-  - [From source](#from-source)
+   - [From source](#from-source)
+   - [Nix](#nix)
   - [Bazzite / Immutable Fedora](#bazzite--immutable-fedora)
   - [Promptfont](#promptfont)
 - [Permissions](#permissions)
@@ -98,9 +99,9 @@ gamepad-osk --help                   # show all options
 
 ## Installation
 
-**Runtime dependencies:** SDL3, SDL3_ttf, wayland, libX11, [promptfont](https://codeberg.org/shinmera/promptfont)
+**Runtime dependencies:** SDL3, SDL3_ttf, wayland, libX11, Fontconfig, [PromptFont](https://codeberg.org/shinmera/promptfont)
 
-**Build dependencies:** Go, SDL3 (dev), SDL3_ttf (dev), libX11 (dev), wayland (dev), wayland-protocols (dev)
+**Build dependencies:** Go, SDL3 (dev), SDL3_ttf (dev), Fontconfig (dev), libX11 (dev), wayland (dev), wayland-protocols (dev)
 
 Package names vary by distro. Find yours below:
 
@@ -140,9 +141,9 @@ nix flake check
 nix develop -c go test ./...
 ```
 
-The dev shell has Go and cgo deps (SDL3, SDL3_ttf, Wayland, X11) pinned for you. The packaged binary ships with a default config, systemd user service, udev rules, and a Nix-store DejaVu font. To use your own fonts, set `GAMEPAD_OSK_FONT_DIRS=/first/dir:/second/dir`.
+The dev shell has Go and cgo deps (SDL3, SDL3_ttf, Fontconfig, Wayland, X11) pinned for you. The packaged binary ships with a default config, systemd user service, udev rules, PromptFont, and a Nix-store DejaVu font. Fonts resolve through Fontconfig first; package-local fonts are deterministic fallbacks.
 
-**NixOS module** — installs the package system-wide and registers the udev rules. It won't set up a user config or service for you.
+**NixOS module** — installs this flake's package system-wide, registers udev rules, and loads `uinput`. It won't set up a user config or service for you.
 
 ```nix
 {
@@ -152,10 +153,9 @@ The dev shell has Go and cgo deps (SDL3, SDL3_ttf, Wayland, X11) pinned for you.
       system = "x86_64-linux";
       modules = [
         gamepad-osk.nixosModules.default
-        ({ pkgs, ... }: {
+        ({ ... }: {
           programs.gamepad-osk = {
             enable = true;
-            package = gamepad-osk.packages.${pkgs.system}.default;
           };
           users.users.my-user.extraGroups = [ "input" ];
         })
@@ -172,7 +172,6 @@ The dev shell has Go and cgo deps (SDL3, SDL3_ttf, Wayland, X11) pinned for you.
   imports = [ inputs.gamepad-osk.homeManagerModules.default ];
   programs.gamepad-osk = {
     enable = true;
-    package = inputs.gamepad-osk.packages.${pkgs.system}.default;
     settings = {
       theme.name = "matrix";
       window.position = "bottom";
@@ -222,30 +221,73 @@ Install build dependencies for your distro before building:
 **Arch:**
 
 ```bash
-sudo pacman -S go sdl3 sdl3_ttf libx11 wayland wlr-protocols
+  sudo pacman -S go sdl3 sdl3_ttf fontconfig libx11 wayland wlr-protocols
 yay -S ttf-promptfont
 ```
 
 **Fedora / Nobara:**
 
 ```bash
-sudo dnf install golang SDL3-devel SDL3_ttf-devel libX11-devel wayland-devel wayland-protocols-devel
+  sudo dnf install golang SDL3-devel SDL3_ttf-devel fontconfig-devel libX11-devel wayland-devel wayland-protocols-devel
 ```
 
 **Debian 13+ / Ubuntu 25.04+:**
 
 ```bash
-sudo apt install golang-go libsdl3-dev libsdl3-ttf-dev libx11-dev libwayland-dev wayland-protocols
+  sudo apt install golang-go libsdl3-dev libsdl3-ttf-dev libfontconfig1-dev libx11-dev libwayland-dev wayland-protocols
 ```
 
 SDL3 is not available on Ubuntu 24.04 or Debian 12. Use a newer release or build SDL3 from source.
+
+### Nix
+
+Run directly:
+
+```bash
+nix run github:0x90shell/gamepad-osk -- --help
+```
+
+NixOS installs package, udev rules, and `uinput` kernel module:
+
+```nix
+{
+  inputs.gamepad-osk.url = "github:0x90shell/gamepad-osk";
+
+  outputs = { nixpkgs, gamepad-osk, ... }: {
+    nixosConfigurations.host = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [ gamepad-osk.nixosModules.default ];
+    };
+  };
+}
+
+# configuration.nix
+programs.gamepad-osk.enable = true;
+```
+
+Home Manager writes immutable declarative configuration and can enable user service:
+
+```nix
+imports = [ inputs.gamepad-osk.homeManagerModules.default ];
+
+programs.gamepad-osk = {
+  enable = true;
+  settings = {
+    theme.name = "matrix";
+    "gamepad.buttons".press = "a";
+  };
+  service.enable = true;
+};
+```
+
+Standalone Home Manager cannot configure host udev or load `uinput`; enable NixOS module or arrange those administrator-owned settings separately. Nix profile user units install below `$out/share/systemd/user`; ensure your session discovers profile data through `XDG_DATA_DIRS`.
 
 ### Bazzite / Immutable Fedora
 
 gamepad-osk needs raw access to `/dev/input` and `/dev/uinput` for gamepad reading and key injection. This rules out Flatpak. On immutable Fedora-based systems (Bazzite, Bluefin, Fedora Atomic), layer the runtime dependencies and reboot:
 
 ```bash
-rpm-ostree install SDL3 SDL3_ttf
+rpm-ostree install SDL3 SDL3_ttf fontconfig
 systemctl reboot
 ```
 
@@ -269,7 +311,7 @@ cp gamepad-osk ~/.local/bin/
 ```bash
 distrobox create --name build --image fedora:41
 distrobox enter build
-sudo dnf install golang SDL3-devel SDL3_ttf-devel libX11-devel wayland-devel wayland-protocols-devel
+sudo dnf install golang SDL3-devel SDL3_ttf-devel fontconfig-devel libX11-devel wayland-devel wayland-protocols-devel
 git clone https://github.com/0x90shell/gamepad-osk.git
 cd gamepad-osk
 go build -o gamepad-osk .
@@ -279,9 +321,9 @@ exit
 
 Make sure `~/.local/bin` is in your `$PATH`.
 
-### Promptfont
+### PromptFont
 
-[Promptfont](https://codeberg.org/shinmera/promptfont) displays controller button glyphs on mapped keys. Without it, those keys show text labels instead.
+[PromptFont](https://codeberg.org/shinmera/promptfont) by Shinmera/Yukari Hafner displays controller button glyphs on mapped keys. Without it, those keys show text labels instead. Nix fetches unmodified PromptFont v1.15 into separate package output under SIL Open Font License 1.1; it is not relicensed by this MIT-licensed application.
 
 **Arch:**
 
@@ -292,7 +334,7 @@ yay -S ttf-promptfont
 **All other distros:**
 
 ```bash
-wget https://codeberg.org/shinmera/promptfont/releases/download/v1.14/promptfont.zip
+wget https://codeberg.org/shinmera/promptfont/releases/download/v1.15/promptfont.zip
 unzip promptfont.zip promptfont.ttf
 mkdir -p ~/.local/share/fonts
 mv promptfont.ttf ~/.local/share/fonts/
@@ -336,10 +378,13 @@ Config is loaded from (first found):
 1. `--config` flag
 2. `~/.config/gamepad-osk/config`
 3. `/etc/gamepad-osk/config`
-4. `config` next to binary
-5. `config` in working directory
+4. `<prefix>/share/gamepad-osk/config`
+5. `config` next to binary
+6. `config` in working directory
 
 A default config is auto-copied to `~/.config/gamepad-osk/` on first run.
+
+Fonts resolve through Fontconfig first, so user-installed fonts take priority. Package-local and legacy FHS font paths are deterministic fallbacks.
 
 See `config.example` for all options including button remapping, toggle combo, mouse stick, theme, scale, opacity, and deadzone.
 

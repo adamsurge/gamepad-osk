@@ -1,9 +1,7 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 )
 
@@ -32,68 +30,46 @@ func TestKeySelectionStateKeepsCursorAndTouchIndependent(t *testing.T) {
 	}
 }
 
-func TestFontSearchDirs(t *testing.T) {
-	first := t.TempDir()
-	second := t.TempDir()
-	t.Setenv(fontDirsEnv, first+string(os.PathListSeparator)+second)
-
-	want := append([]string{first, second}, fallbackFontDirs...)
-	if got := fontSearchDirs(); !slices.Equal(got, want) {
-		t.Fatalf("fontSearchDirs() = %q, want %q", got, want)
-	}
-}
-
-func TestFontSearchDirsFallsBackWithoutEnvironment(t *testing.T) {
-	t.Setenv(fontDirsEnv, "")
-
-	if got := fontSearchDirs(); !slices.Equal(got, fallbackFontDirs) {
-		t.Fatalf("fontSearchDirs() = %q, want %q", got, fallbackFontDirs)
-	}
-}
-
-func TestFontSearchDirsIgnoresEmptyEntries(t *testing.T) {
-	dir := t.TempDir()
-	separator := string(os.PathListSeparator)
-	t.Setenv(fontDirsEnv, separator+dir+separator)
-
-	want := append([]string{dir}, fallbackFontDirs...)
-	if got := fontSearchDirs(); !slices.Equal(got, want) {
-		t.Fatalf("fontSearchDirs() = %q, want %q", got, want)
-	}
-}
-
-func TestFindFontInDirs(t *testing.T) {
-	first := t.TempDir()
-	second := t.TempDir()
-	fontPath := filepath.Join(second, "LiberationSans-Regular.ttf")
-	if err := os.WriteFile(fontPath, nil, 0600); err != nil {
-		t.Fatalf("write test font: %v", err)
-	}
-
-	if got := findFontInDirs([]string{"DejaVu Sans", "Liberation Sans"}, []string{first, second}); got != fontPath {
-		t.Fatalf("findFontInDirs() = %q, want %q", got, fontPath)
-	}
-}
-
-func TestFindFontInDirsPrefersEarlierDirectory(t *testing.T) {
-	first := t.TempDir()
-	second := t.TempDir()
-	firstPath := filepath.Join(first, "FreeSans.ttf")
-	secondPath := filepath.Join(second, "DejaVuSans.ttf")
-	for _, path := range []string{firstPath, secondPath} {
-		if err := os.WriteFile(path, nil, 0600); err != nil {
-			t.Fatalf("write test font: %v", err)
+func TestFindFontPrefersFontconfig(t *testing.T) {
+	previousLookup, previousExists := fontconfigLookup, fontFileExists
+	fontconfigLookup = func(family string) string {
+		if family == "DejaVu Sans" {
+			return "/home/user/.local/share/fonts/DejaVuSans.ttf"
 		}
+		return ""
 	}
+	fontFileExists = func(path string) bool { return path == "/home/user/.local/share/fonts/DejaVuSans.ttf" }
+	t.Cleanup(func() {
+		fontconfigLookup = previousLookup
+		fontFileExists = previousExists
+	})
 
-	if got := findFontInDirs([]string{"DejaVu Sans", "FreeSans"}, []string{first, second}); got != firstPath {
-		t.Fatalf("findFontInDirs() = %q, want earlier-directory font %q", got, firstPath)
+	if got, want := findFont("DejaVu Sans"), "/home/user/.local/share/fonts/DejaVuSans.ttf"; got != want {
+		t.Errorf("findFont() = %q, want %q", got, want)
 	}
 }
 
-func TestFindFontInDirsMissing(t *testing.T) {
-	if got := findFontInDirs([]string{"DejaVu Sans", "unknown"}, []string{t.TempDir()}); got != "" {
-		t.Fatalf("findFontInDirs() = %q, want empty string", got)
+func TestFindFontFallsBackToPackageAndFHSPaths(t *testing.T) {
+	tmp := t.TempDir()
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", "gamepad-osk"))
+	previousLookup, previousExists, previousDirs := fontconfigLookup, fontFileExists, fhsFontDirs
+	fontconfigLookup = func(string) string { return "" }
+	packageFont := filepath.Join(tmp, "prefix", "share", "gamepad-osk", "fonts", "DejaVuSans.ttf")
+	fhsFont := filepath.Join(tmp, "legacy", "DejaVuSans.ttf")
+	fontFileExists = func(path string) bool { return path == packageFont || path == fhsFont }
+	fhsFontDirs = []string{filepath.Join(tmp, "legacy")}
+	t.Cleanup(func() {
+		fontconfigLookup = previousLookup
+		fontFileExists = previousExists
+		fhsFontDirs = previousDirs
+	})
+
+	if got := findFont("DejaVu Sans"); got != packageFont {
+		t.Errorf("package fallback = %q, want %q", got, packageFont)
+	}
+	fontFileExists = func(path string) bool { return path == fhsFont }
+	if got := findFont("DejaVu Sans"); got != fhsFont {
+		t.Errorf("FHS fallback = %q, want %q", got, fhsFont)
 	}
 }
 

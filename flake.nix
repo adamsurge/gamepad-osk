@@ -28,10 +28,11 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          gamepad-osk = pkgs.callPackage ./nix/package.nix { };
+          promptfont = pkgs.callPackage ./nix/promptfont.nix { };
+          gamepad-osk = pkgs.callPackage ./nix/package.nix { inherit promptfont; };
         in
         {
-          inherit gamepad-osk;
+          inherit gamepad-osk promptfont;
           default = gamepad-osk;
         }
       );
@@ -48,15 +49,33 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          promptfont = self.packages.${system}.promptfont;
+          package = self.packages.${system}.gamepad-osk;
           moduleChecks = import ./nix/module-tests.nix {
             inherit pkgs nixpkgs home-manager;
-            package = self.packages.${system}.default;
+            inherit package;
             nixosModule = self.nixosModules.default;
             homeManagerModule = self.homeManagerModules.default;
           };
         in
         {
-          gamepad-osk = self.packages.${system}.default;
+          package-artifacts = pkgs.callPackage ./nix/package-tests.nix {
+            inherit package promptfont;
+          };
+          nix-lint =
+            pkgs.runCommand "gamepad-osk-nix-lint"
+              {
+                nativeBuildInputs = [
+                  pkgs.deadnix
+                  pkgs.statix
+                ];
+              }
+              ''
+                deadnix --fail ${./flake.nix} ${./nix}
+                statix check ${./flake.nix}
+                statix check ${./nix}
+                touch "$out"
+              '';
           inherit (moduleChecks) nixos-module home-manager-module;
         }
       );
@@ -71,14 +90,42 @@
           default = pkgs.mkShell {
             inputsFrom = [ package ];
             packages = [ pkgs.go_1_26 ];
-            GAMEPAD_OSK_FONT_DIRS = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVu";
           };
         }
       );
 
-      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      formatter = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        pkgs.writeShellScriptBin "nixfmt" ''
+          ${pkgs.nixfmt}/bin/nixfmt $(${pkgs.git}/bin/git ls-files -- '*.nix')
+        ''
+      );
 
-      nixosModules.default = import ./nix/nixos-module.nix;
-      homeManagerModules.default = import ./nix/home-manager-module.nix;
+      nixosModules = rec {
+        gamepad-osk =
+          { lib, pkgs, ... }:
+          {
+            imports = [ ./nix/nixos-module.nix ];
+            programs.gamepad-osk.package =
+              lib.mkDefault
+                self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          };
+        default = gamepad-osk;
+      };
+
+      homeManagerModules = rec {
+        gamepad-osk =
+          { lib, pkgs, ... }:
+          {
+            imports = [ ./nix/home-manager-module.nix ];
+            programs.gamepad-osk.package =
+              lib.mkDefault
+                self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          };
+        default = gamepad-osk;
+      };
     };
 }
