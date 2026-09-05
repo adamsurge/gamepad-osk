@@ -401,8 +401,14 @@ func (app *App) Run() error {
 			if !ok {
 				continue
 			}
+			repeating := app.touch.IsRepeating(touchEvent)
 			activate, changed := app.touch.Handle(touchEvent, windowID, width, height, geometry)
-			if activate != nil {
+			if cfg.Keys.PointerBackspaceRepeat && changed && touchEvent.Phase == TouchDown {
+				if pos, ok := keyPositionForCode(kb, KEY_BACKSPACE); ok && app.touch.StartRepeat(touchEvent, pos, time.Now()) {
+					kb.PressAt(pos, inj)
+				}
+			}
+			if activate != nil && !repeating {
 				kb.PressAt(*activate, inj)
 			}
 			if changed {
@@ -470,6 +476,14 @@ func (app *App) Run() error {
 				app.repeatLast = now
 			}
 		}
+		if cfg.Keys.PointerBackspaceRepeat {
+			now := time.Now()
+			delay := time.Duration(cfg.Keys.RepeatDelayMs) * time.Millisecond
+			rate := time.Duration(cfg.Keys.RepeatRateMs) * time.Millisecond
+			for _, pos := range app.touch.RepeatableContacts(now, delay, rate) {
+				kb.PressAt(pos, inj)
+			}
+		}
 
 		// Check flash/key flash expiry to trigger final redraw
 		if app.visible {
@@ -492,7 +506,11 @@ func (app *App) Run() error {
 		// Frame pacing: vsync in rend.Draw handles active rendering.
 		// Sleep when hidden, when visible but idle (nothing to draw), or
 		// when stick is active (sub-vsync polling for smooth cursor).
-		if !app.visible || rend.dirtyFrames <= 0 || gamepad.NeedsPolling() {
+		pointerPolling := false
+		if cfg.Keys.PointerBackspaceRepeat {
+			_, pointerPolling = app.touch.NextRepeat(time.Now(), time.Duration(cfg.Keys.RepeatDelayMs)*time.Millisecond, time.Duration(cfg.Keys.RepeatRateMs)*time.Millisecond)
+		}
+		if !app.visible || rend.dirtyFrames <= 0 || gamepad.NeedsPolling() || pointerPolling {
 			pollMs := 16 // hidden idle: ~60Hz for IPC + gamepad checks
 			if gamepad.NeedsPolling() {
 				pollMs = 4 // mouse/nav active: ~250Hz for smooth cursor
@@ -506,6 +524,11 @@ func (app *App) Run() error {
 				}
 				if nextMs > 0 && int(nextMs) < pollMs {
 					pollMs = int(nextMs)
+				}
+			}
+			if pointerPolling {
+				if next, _ := app.touch.NextRepeat(time.Now(), time.Duration(cfg.Keys.RepeatDelayMs)*time.Millisecond, time.Duration(cfg.Keys.RepeatRateMs)*time.Millisecond); next > 0 && int(next.Milliseconds()) < pollMs {
+					pollMs = int(next.Milliseconds())
 				}
 			}
 			if pollMs > 0 {
@@ -731,4 +754,15 @@ func (app *App) startRepeat(action ActionType) {
 
 func (app *App) stopRepeat() {
 	app.repeatAction = ActionNone
+}
+
+func keyPositionForCode(kb *KeyboardState, code int) (KeyPosition, bool) {
+	for row, keys := range kb.Layout {
+		for col, key := range keys {
+			if key.Code == code {
+				return KeyPosition{Row: row, Col: col}, true
+			}
+		}
+	}
+	return KeyPosition{}, false
 }

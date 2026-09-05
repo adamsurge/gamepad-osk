@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 type TouchPhase uint8
 
 const (
@@ -35,6 +37,14 @@ type TouchContact struct {
 type TouchSequence struct {
 	selected    KeyPosition
 	hasSelected bool
+	repeat      pointerRepeat
+}
+
+type pointerRepeat struct {
+	active  bool
+	started bool
+	last    time.Time
+	initial bool
 }
 
 type TouchInput struct {
@@ -77,6 +87,7 @@ func (t *TouchInput) Handle(
 		if !setTouchSelection(&sequence, pos, ok) {
 			return nil, false
 		}
+		sequence.repeat.active = false
 		t.contacts[contact] = sequence
 		return nil, true
 
@@ -105,6 +116,64 @@ func (t *TouchInput) Handle(
 	}
 
 	return nil, false
+}
+
+// StartRepeat arms repeat for event's contact when it selects pos.
+func (t *TouchInput) StartRepeat(event TouchEvent, pos KeyPosition, now time.Time) bool {
+	contact := contactFromEvent(event)
+	sequence, ok := t.contacts[contact]
+	if !ok || !sequence.hasSelected || sequence.selected != pos {
+		return false
+	}
+	sequence.repeat = pointerRepeat{active: true, started: true, last: now, initial: true}
+	t.contacts[contact] = sequence
+	return true
+}
+
+func (t *TouchInput) IsRepeating(event TouchEvent) bool {
+	sequence, ok := t.contacts[contactFromEvent(event)]
+	return ok && sequence.repeat.started
+}
+
+// RepeatableContacts returns contacts whose next repeat is due and advances them.
+func (t *TouchInput) RepeatableContacts(now time.Time, delay, rate time.Duration) []KeyPosition {
+	var due []KeyPosition
+	for contact, sequence := range t.contacts {
+		if !sequence.repeat.active || !sequence.hasSelected {
+			continue
+		}
+		wait := rate
+		if sequence.repeat.initial {
+			wait = delay
+		}
+		if now.Sub(sequence.repeat.last) >= wait {
+			due = append(due, sequence.selected)
+			sequence.repeat.last = now
+			sequence.repeat.initial = false
+			t.contacts[contact] = sequence
+		}
+	}
+	return due
+}
+
+func (t *TouchInput) NextRepeat(now time.Time, delay, rate time.Duration) (time.Duration, bool) {
+	var next time.Duration
+	active := false
+	for _, sequence := range t.contacts {
+		if !sequence.repeat.active {
+			continue
+		}
+		active = true
+		wait := rate
+		if sequence.repeat.initial {
+			wait = delay
+		}
+		remaining := wait - now.Sub(sequence.repeat.last)
+		if next == 0 || remaining < next {
+			next = remaining
+		}
+	}
+	return next, active
 }
 
 func (t *TouchInput) IsSelected(pos KeyPosition) bool {
