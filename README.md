@@ -10,7 +10,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 - [Features](#features)
 - [Controls](#controls)
-- [Touchscreen and mouse](#touchscreen-and-mouse)
+- [Touchscreen and Mouse](#touchscreen-and-mouse)
 - [Usage](#usage)
 - [Installation](#installation)
   - [AUR (Arch Linux)](#aur-arch-linux)
@@ -74,17 +74,14 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 | Cfg key | Cycle themes (Shift+Cfg = reverse) |
 | Toggle combo (configurable) | Show/hide keyboard |
 
-## Touchscreen and mouse
 
-Touch one or more keys to highlight them independently. Each contact can slide to a different key, then activates whichever key it's over when lifted. Sliding into padding, a gap, or outside the window clears that contact's selection only - lifting there activates nothing. If multiple contacts land on the same key, it stays highlighted until the last one leaves, and each contact activates it once on lift.
+## Touchscreen and Mouse
 
-Click and hold a key with left mouse button to select it, drag between keys to change selection, then release to activate selected key. Releasing outside selected key cancels click. Right and middle buttons do not activate keyboard keys. Mouse and touch selections remain independent. Mouse and touchscreen holds on Backspace send immediately and repeat after `repeat_delay_ms` at `repeat_rate_ms` by default. Set `keys.pointer_backspace_repeat = false` to disable this behavior. This option affects Backspace only, not other pointer keys.
-
-Touch and mouse selection use the theme's pressed-key colour, distinct from the gamepad cursor highlight. Pointer selection takes visual precedence when both inputs select the same key. Gamepad navigation won't disturb pending pointer selections. Hiding or closing the keyboard cancels pending pointer selections.
-
-Keys commit in the order fingers are released - this applies to modifiers too, so releasing Shift before a letter applies it, releasing the letter first types it unmodified. For held Shift, use gamepad LT.
-
-Native SDL3 touch and mouse events work on both X11 and Wayland. The Wayland layer-shell overlay accepts pointer input without keyboard focus. SDL synthetic cross-device events are disabled to prevent duplicate activation.
+- **Touch:** each contact is tracked independently and can slide to a different key, activating whichever key it's over on lift. Sliding off the keyboard clears that contact's selection without activating anything. Multiple contacts on the same key keep it highlighted until the last one lifts; each still activates it once.
+- **Mouse:** left-click and hold to select, drag to change selection, release to activate. Releasing off the key cancels without activating. Right/middle click do nothing. Mouse and touch selections are independent of each other.
+- **Gamepad handoff:** a successful touch/mouse activation moves the gamepad highlight to that key. Gamepad input never interrupts a pending touch/mouse press, and hiding/closing the keyboard cancels one.
+- **Backspace repeat:** holding Backspace via touch/mouse fires immediately, then repeats at `repeat_rate_ms` after `repeat_delay_ms`. Disable with `keys.pointer_backspace_repeat = false` (Backspace only).
+- Implemented via native SDL3 events on X11 and Wayland; the Wayland layer-shell overlay accepts pointer input without keyboard focus. Synthetic cross-device events are disabled to prevent duplicate activation.
 
 ## Usage
 
