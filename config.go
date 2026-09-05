@@ -32,20 +32,21 @@ type ThemeConfig struct {
 }
 
 type WindowConfig struct {
-	Position     string  // "bottom" or "top"
+	Position     string // "bottom" or "top"
 	Margin       int
-	BottomMargin int     // deprecated, migrated to Margin
+	BottomMargin int // deprecated, migrated to Margin
 	Opacity      float64
-	PanelAvoid   bool    // Wayland: respect panel exclusive zones (false = always screen edge)
+	PanelAvoid   bool // Wayland: respect panel exclusive zones (false = always screen edge)
 }
 
 type KeysConfig struct {
-	UnitSize      int
-	Padding       int
-	FontSize      int
-	Scale         int // percentage of screen width (30-100, default 50)
-	RepeatDelayMs int // ms before key repeat starts (default 400)
-	RepeatRateMs  int // ms between repeats (default 80)
+	UnitSize               int
+	Padding                int
+	FontSize               int
+	Scale                  int  // percentage of screen width (30-100, default 50)
+	RepeatDelayMs          int  // ms before key repeat starts (default 400)
+	RepeatRateMs           int  // ms between repeats (default 80)
+	PointerBackspaceRepeat bool // repeat backspace while held by pointer
 }
 
 type ButtonsConfig struct {
@@ -81,7 +82,7 @@ func DefaultConfig() Config {
 	return Config{
 		Theme:  ThemeConfig{Name: "matrix"},
 		Window: WindowConfig{Position: "bottom", Margin: 0, Opacity: 0.95, PanelAvoid: true},
-		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 50, RepeatDelayMs: 400, RepeatRateMs: 80},
+		Keys:   KeysConfig{UnitSize: 0, Padding: 4, FontSize: 0, Scale: 50, RepeatDelayMs: 400, RepeatRateMs: 80, PointerBackspaceRepeat: true},
 		Gamepad: GamepadConfig{
 			Grab:          true,
 			Deadzone:      0.25,
@@ -90,12 +91,12 @@ func DefaultConfig() Config {
 			MouseStick:    "right",
 			ComboPeriodMs: 200,
 			Buttons: ButtonsConfig{
-				Press:      "a",
-				Close:      "b",
-				Backspace:  "x",
-				Space:      "y",
-				Shift:      "lt",
-				Enter:      "rt",
+				Press:          "a",
+				Close:          "b",
+				Backspace:      "x",
+				Space:          "y",
+				Shift:          "lt",
+				Enter:          "rt",
 				LeftClick:      "rb",
 				RightClick:     "lb",
 				PositionToggle: "start",
@@ -207,6 +208,8 @@ func parseINI(r io.Reader, cfg *Config) error {
 				if n, err := strconv.Atoi(val); err == nil {
 					cfg.Keys.RepeatRateMs = n
 				}
+			case "pointer_backspace_repeat":
+				cfg.Keys.PointerBackspaceRepeat = parseBool("pointer_backspace_repeat", val, true)
 			default:
 				Debugf("unknown config key: keys.%s", key)
 			}
@@ -307,12 +310,13 @@ func writeINI(w io.Writer, cfg Config) error {
 	b.WriteString(line(kvf("scale", cfg.Keys.Scale), "percentage of screen width (30-100)"))
 	b.WriteString(line(kvf("repeat_delay_ms", cfg.Keys.RepeatDelayMs), "ms before key repeat starts (100-2000)"))
 	b.WriteString(line(kvf("repeat_rate_ms", cfg.Keys.RepeatRateMs), "ms between repeats (20-500)"))
+	b.WriteString(line(kvf("pointer_backspace_repeat", cfg.Keys.PointerBackspaceRepeat), "repeat backspace on held mouse/touch contact (default true)"))
 	b.WriteString("\n")
 
 	b.WriteString("[gamepad]\n")
 	b.WriteString(line(kv("device", cfg.Gamepad.Device), "empty = auto-detect, or /dev/input/eventX"))
 	b.WriteString(line(kvf("grab", cfg.Gamepad.Grab), "grab device when visible (prevents input bleed to game)"))
-b.WriteString(line(kv("deadzone", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f', -1, 64)), "stick deadzone (0.0-1.0)"))
+	b.WriteString(line(kv("deadzone", strconv.FormatFloat(cfg.Gamepad.Deadzone, 'f', -1, 64)), "stick deadzone (0.0-1.0)"))
 	b.WriteString(line(kvf("long_press_ms", cfg.Gamepad.LongPressMs), "ms to hold for accent popup (100-5000)"))
 	b.WriteString(line(kv("swap_xy", cfg.Gamepad.SwapXY), "auto = detect xpad/xpadneo/xone drivers (default), true = force swap, false = off"))
 	b.WriteString(line(kv("mouse_stick", cfg.Gamepad.MouseStick), "left or right - nav uses the other stick"))
@@ -627,7 +631,7 @@ func checkConfigFile(path string) []string {
 	}
 	defer func() { _ = f.Close() }()
 	var issues []string
-	boolKeys := map[string]bool{"grab": true, "enabled": true, "panel_avoid": true}
+	boolKeys := map[string]bool{"grab": true, "enabled": true, "panel_avoid": true, "pointer_backspace_repeat": true}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

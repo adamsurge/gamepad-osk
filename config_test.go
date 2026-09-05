@@ -36,14 +36,17 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Gamepad.Buttons.PositionToggle != "start" {
 		t.Errorf("default position_toggle = %q, want start", cfg.Gamepad.Buttons.PositionToggle)
 	}
+	if !cfg.Keys.PointerBackspaceRepeat {
+		t.Error("pointer backspace repeat should default to true")
+	}
 }
 
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
-		name     string
-		modify   func(*Config)
-		checkFn  func(*Config) bool
-		desc     string
+		name    string
+		modify  func(*Config)
+		checkFn func(*Config) bool
+		desc    string
 	}{
 		{"deadzone too high", func(c *Config) { c.Gamepad.Deadzone = 2.0 },
 			func(c *Config) bool { return c.Gamepad.Deadzone == 0.25 }, "should reset to 0.25"},
@@ -404,6 +407,7 @@ font_size = 14
 scale = 60
 repeat_delay_ms = 300
 repeat_rate_ms = 50
+pointer_backspace_repeat = false
 
 [gamepad]
 device = /dev/input/event5
@@ -450,6 +454,9 @@ sensitivity = 12
 	}
 	if cfg.Keys.RepeatDelayMs != 300 {
 		t.Errorf("keys.repeat_delay_ms = %d, want 300", cfg.Keys.RepeatDelayMs)
+	}
+	if cfg.Keys.PointerBackspaceRepeat {
+		t.Error("keys.pointer_backspace_repeat should be false")
 	}
 	if cfg.Gamepad.Device != "/dev/input/event5" {
 		t.Errorf("gamepad.device = %q, want /dev/input/event5", cfg.Gamepad.Device)
@@ -509,6 +516,7 @@ func TestWriteINIRoundTrip(t *testing.T) {
 	cfg.Theme.Name = "cobalt"
 	cfg.Window.Opacity = 0.98
 	cfg.Gamepad.Buttons.Press = "b"
+	cfg.Keys.PointerBackspaceRepeat = false
 
 	var buf strings.Builder
 	if err := writeINI(&buf, cfg); err != nil {
@@ -529,6 +537,9 @@ func TestWriteINIRoundTrip(t *testing.T) {
 	}
 	if cfg2.Gamepad.Buttons.Press != "b" {
 		t.Errorf("round-trip press = %q, want b", cfg2.Gamepad.Buttons.Press)
+	}
+	if cfg2.Keys.PointerBackspaceRepeat {
+		t.Error("round-trip pointer_backspace_repeat should be false")
 	}
 	if cfg2.Gamepad.Grab != true {
 		t.Error("round-trip grab should be true (default)")

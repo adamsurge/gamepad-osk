@@ -10,12 +10,13 @@ opacity = 0.95               # 0.0-1.0 (1.0 = fully opaque)
 panel_avoid = true           # Wayland: respect panel spacing (false = always screen edge)
 
 [keys]
-unit_size = 0                # 0 = auto-scale, or fixed pixel size
-padding = 4                  # pixels between keys
-font_size = 0                # 0 = auto-scale relative to unit_size
-scale = 50                   # percentage of screen width (30-100)
-repeat_delay_ms = 400        # ms before key repeat starts (100-2000)
-repeat_rate_ms = 80          # ms between repeats (20-500)
+unit_size = 0                    # 0 = auto-scale, or fixed pixel size
+padding = 4                      # pixels between keys
+font_size = 0                    # 0 = auto-scale relative to unit_size
+scale = 50                       # percentage of screen width (30-100)
+repeat_delay_ms = 400            # ms before key repeat starts (100-2000)
+repeat_rate_ms = 80              # ms between repeats (20-500)
+pointer_backspace_repeat = true  # repeat backspace on held mouse/touch contact
 
 [gamepad]
 device =                     # empty = auto-detect, or /dev/input/eventX

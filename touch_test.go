@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 func TestTouchDownSelectsWithoutActivation(t *testing.T) {
@@ -16,6 +17,76 @@ func TestTouchDownSelectsWithoutActivation(t *testing.T) {
 	}
 	if !touch.IsSelected(want) || len(touch.contacts) != 1 {
 		t.Errorf("TouchDown contacts = %#v; want %v selected", touch.contacts, want)
+	}
+}
+
+func TestPointerRepeatContactsAreIndependent(t *testing.T) {
+	geometry, width, height := testTouchGeometry()
+	pos := KeyPosition{Row: 0, Col: 0}
+	now := time.Unix(100, 0)
+	firstEvent := touchEventAt(t, TouchDown, 10, 20, 30, pos, geometry, width, height)
+	secondEvent := touchEventAt(t, TouchDown, 10, 20, 31, pos, geometry, width, height)
+	var touch2 TouchInput
+	touch2.Handle(firstEvent, 10, width, height, geometry)
+	touch2.Handle(secondEvent, 10, width, height, geometry)
+	if !touch2.StartRepeat(firstEvent, pos, now) {
+		t.Fatal("StartRepeat returned false")
+	}
+	if touch2.IsRepeating(secondEvent) {
+		t.Error("starting one contact armed another contact")
+	}
+	if !touch2.StartRepeat(secondEvent, pos, now) {
+		t.Fatal("second StartRepeat returned false")
+	}
+	if got := touch2.RepeatableContacts(now.Add(399*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); len(got) != 0 {
+		t.Fatalf("early repeats = %v; want none", got)
+	}
+	if got := touch2.RepeatableContacts(now.Add(400*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); len(got) != 2 {
+		t.Fatalf("initial repeats = %v; want two", got)
+	}
+	up := touchEventAt(t, TouchUp, 10, 20, 30, pos, geometry, width, height)
+	repeating := touch2.IsRepeating(up)
+	activate, changed := touch2.Handle(up, 10, width, height, geometry)
+	if activate == nil || !changed || !repeating {
+		t.Fatal("first contact release was not suppressible")
+	}
+	if next, active := touch2.NextRepeat(now.Add(400*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); !active || next <= 0 {
+		t.Fatalf("remaining repeat = %v, %v; want active future deadline", next, active)
+	}
+}
+
+func TestPointerRepeatStopsOnMotionAndSuppressesRelease(t *testing.T) {
+	geometry, width, height := testTouchGeometry()
+	var touch TouchInput
+	pos := KeyPosition{Row: 0, Col: 0}
+	other := KeyPosition{Row: 0, Col: 1}
+	now := time.Unix(100, 0)
+	touch.Handle(touchEventAt(t, TouchDown, 10, 20, 30, pos, geometry, width, height), 10, width, height, geometry)
+	down := touchEventAt(t, TouchDown, 10, 20, 30, pos, geometry, width, height)
+	touch.StartRepeat(down, pos, now)
+	if got := touch.RepeatableContacts(now.Add(400*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); len(got) != 1 {
+		t.Fatalf("initial repeats = %v; want one", got)
+	}
+	touch.Handle(touchEventAt(t, TouchMotion, 10, 20, 30, other, geometry, width, height), 10, width, height, geometry)
+	if _, active := touch.NextRepeat(now.Add(400*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); active {
+		t.Error("motion onto another key kept repeat scheduled")
+	}
+	touch.Handle(touchEventAt(t, TouchMotion, 10, 20, 30, pos, geometry, width, height), 10, width, height, geometry)
+	if _, active := touch.NextRepeat(now.Add(480*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); active {
+		t.Error("motion back to backspace restarted repeat schedule")
+	}
+	up := touchEventAt(t, TouchUp, 10, 20, 30, pos, geometry, width, height)
+	repeating := touch.IsRepeating(up)
+	activate, changed := touch.Handle(up, 10, width, height, geometry)
+	if activate == nil || !changed || !repeating {
+		t.Fatal("release after motion was not suppressible")
+	}
+	if touch.Cancel() {
+		t.Error("release did not clear contact")
+	}
+	next, active := touch.NextRepeat(now, time.Second, time.Second)
+	if next != 0 || active {
+		t.Error("release did not clear repeat state")
 	}
 }
 
@@ -151,17 +222,29 @@ func TestMouseAndTouchContactsRemainIndependent(t *testing.T) {
 	if !touch.IsSelected(touchPos) || !touch.IsSelected(mousePos) || len(touch.contacts) != 2 {
 		t.Fatalf("contacts = %#v; want independent touch and mouse selections", touch.contacts)
 	}
+	now := time.Unix(100, 0)
+	touchDown := touchEventAt(t, TouchDown, 10, 20, 30, touchPos, geometry, width, height)
+	if !touch.StartRepeat(touchDown, touchPos, now) || !touch.StartRepeat(mouseDown, mousePos, now) {
+		t.Fatal("mouse and touch repeats did not start independently")
+	}
+	if got := touch.RepeatableContacts(now.Add(400*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); len(got) != 2 {
+		t.Fatalf("mouse and touch repeats = %v; want two", got)
+	}
 
 	mouseUp, ok := mouseEventFromSDLEvent(mouseSDLEventAt(t, SDL_EVENT_MOUSE_BUTTON_UP, 10, mousePos, geometry), width, height)
 	if !ok {
 		t.Fatal("mouse button up was not converted")
 	}
+	repeating := touch.IsRepeating(mouseUp)
 	activate, changed := touch.Handle(mouseUp, 10, width, height, geometry)
-	if activate == nil || *activate != mousePos || !changed {
-		t.Fatalf("mouse up = %v, %v; want %v, true", activate, changed, mousePos)
+	if activate == nil || *activate != mousePos || !changed || !repeating {
+		t.Fatalf("mouse up = %v, %v, repeating %v; want %v, true, true", activate, changed, repeating, mousePos)
 	}
 	if !touch.IsSelected(touchPos) || len(touch.contacts) != 1 {
 		t.Errorf("mouse release changed touch contact: %#v", touch.contacts)
+	}
+	if _, active := touch.NextRepeat(now.Add(400*time.Millisecond), 400*time.Millisecond, 80*time.Millisecond); !active {
+		t.Error("mouse release stopped touch repeat")
 	}
 }
 

@@ -35,6 +35,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 - Evdev gamepad input (works with any controller)
 - Native multi-contact touchscreen input with independent slide selection
 - Native left-mouse key selection, dragging, and release activation
+- Mouse/touch backspace repeat while holding backspace
 - Xbox pad auto-detection (swap_xy for xpad/xpadneo/xone drivers)
 - 60 color themes (cycle live with Cfg key, or set via config/flag)
 - Promptfont controller-agnostic button glyphs on mapped keys
@@ -78,7 +79,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
 
 Touch one or more keys to highlight them independently. Each contact can slide to a different key, then activates whichever key it's over when lifted. Sliding into padding, a gap, or outside the window clears that contact's selection only - lifting there activates nothing. If multiple contacts land on the same key, it stays highlighted until the last one leaves, and each contact activates it once on lift.
 
-Click and hold a key with left mouse button to select it, drag between keys to change selection, then release to activate selected key. Releasing outside selected key cancels click. Right and middle buttons do not activate keyboard keys. Mouse and touch selections remain independent.
+Click and hold a key with left mouse button to select it, drag between keys to change selection, then release to activate selected key. Releasing outside selected key cancels click. Right and middle buttons do not activate keyboard keys. Mouse and touch selections remain independent. Mouse and touchscreen holds on Backspace send immediately and repeat after `repeat_delay_ms` at `repeat_rate_ms` by default. Set `keys.pointer_backspace_repeat = false` to disable this behavior. This option affects Backspace only, not other pointer keys.
 
 Touch and mouse selection use the theme's pressed-key colour, distinct from the gamepad cursor highlight. Pointer selection takes visual precedence when both inputs select the same key. Gamepad navigation won't disturb pending pointer selections. Hiding or closing the keyboard cancels pending pointer selections.
 
