@@ -1,37 +1,41 @@
 {
-  lib,
   buildGo126Module,
   coreutils,
   dejavu_fonts,
+  fontconfig,
+  lib,
   libX11,
-  makeWrapper,
   pkg-config,
+  promptfont,
   sdl3,
   sdl3-ttf,
   wayland,
 }:
 
-buildGo126Module rec {
+buildGo126Module (finalAttrs: {
   pname = "gamepad-osk";
   version = "2.1.1";
 
-  src = lib.cleanSourceWith {
-    src = ../.;
-    filter =
-      path: _type:
-      let
-        name = baseNameOf path;
-      in
-      name != ".git" && name != ".opencode" && name != "result";
+  src = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      ../config.example
+      ../gamepad-osk.service
+      ../gamepad-osk.udev
+      ../go.mod
+      ../go.sum
+      (lib.fileset.fileFilter (file: file.hasExt "c") ../.)
+      (lib.fileset.fileFilter (file: file.hasExt "go") ../.)
+      (lib.fileset.fileFilter (file: file.hasExt "h") ../.)
+    ];
   };
 
   vendorHash = null;
+  strictDeps = true;
 
-  nativeBuildInputs = [
-    makeWrapper
-    pkg-config
-  ];
+  nativeBuildInputs = [ pkg-config ];
   buildInputs = [
+    fontconfig
     sdl3
     sdl3-ttf
     wayland
@@ -41,19 +45,22 @@ buildGo126Module rec {
   ldflags = [
     "-s"
     "-w"
-    "-X main.version=${version}"
+    "-X main.version=${finalAttrs.version}"
   ];
   doCheck = true;
 
   postInstall = ''
     install -Dm644 config.example "$out/share/gamepad-osk/config"
     install -Dm644 gamepad-osk.udev "$out/lib/udev/rules.d/80-gamepad-osk.rules"
-    install -Dm644 gamepad-osk.service "$out/lib/systemd/user/gamepad-osk.service"
-    substituteInPlace "$out/lib/systemd/user/gamepad-osk.service" \
+    install -Dm644 gamepad-osk.service "$out/share/systemd/user/gamepad-osk.service"
+    substituteInPlace "$out/share/systemd/user/gamepad-osk.service" \
       --replace-fail /bin/sleep ${coreutils}/bin/sleep \
       --replace-fail /usr/bin/gamepad-osk "$out/bin/gamepad-osk"
-    wrapProgram "$out/bin/gamepad-osk" \
-      --suffix GAMEPAD_OSK_FONT_DIRS : "${dejavu_fonts}/share/fonts/truetype/DejaVu"
+    mkdir -p "$out/share/gamepad-osk/fonts"
+    ln -s ${promptfont}/share/fonts/truetype/promptfont/promptfont.ttf \
+      "$out/share/gamepad-osk/fonts/promptfont.ttf"
+    ln -s ${dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf \
+      "$out/share/gamepad-osk/fonts/DejaVuSans.ttf"
   '';
 
   meta = {
@@ -63,4 +70,4 @@ buildGo126Module rec {
     mainProgram = "gamepad-osk";
     platforms = lib.platforms.linux;
   };
-}
+})
