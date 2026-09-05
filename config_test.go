@@ -9,6 +9,178 @@ import (
 	"testing"
 )
 
+func useExecutablePath(t *testing.T, path string) {
+	t.Helper()
+	previous := executablePath
+	executablePath = func() (string, error) { return path, nil }
+	t.Cleanup(func() { executablePath = previous })
+}
+
+func writeTestConfig(t *testing.T, path, theme string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { //nolint:gosec // G301: test directory
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("[theme]\nname = "+theme+"\n"), 0644); err != nil { //nolint:gosec // G306: test config
+		t.Fatal(err)
+	}
+}
+
+func TestExecutablePrefixAndPackageDataPath(t *testing.T) {
+	useExecutablePath(t, "/nix/store/example-gamepad-osk/bin/.gamepad-osk-wrapped")
+	if got, want := executablePrefix(), "/nix/store/example-gamepad-osk"; got != want {
+		t.Errorf("executablePrefix() = %q, want %q", got, want)
+	}
+	if got, want := packageDataPath("config"), "/nix/store/example-gamepad-osk/share/gamepad-osk/config"; got != want {
+		t.Errorf("packageDataPath() = %q, want %q", got, want)
+	}
+}
+
+func TestPackageDataPathRejectsUnsafeExecutable(t *testing.T) {
+	useExecutablePath(t, "bin/gamepad-osk")
+	if got := packageDataPath("config"); got != "" {
+		t.Errorf("packageDataPath() = %q, want empty path", got)
+	}
+}
+
+func TestLoadConfigUsesPackageTemplateAndCopiesIt(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "user"))
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", ".gamepad-osk-wrapped"))
+	previousSystemConfig := systemConfigPath
+	systemConfigPath = filepath.Join(tmp, "missing-system-config")
+	t.Cleanup(func() { systemConfigPath = previousSystemConfig })
+	packageConfig := filepath.Join(tmp, "prefix", "share", "gamepad-osk", "config")
+	writeTestConfig(t, packageConfig, "cobalt")
+
+	cfg := LoadConfig("")
+	if cfg.Theme.Name != "cobalt" {
+		t.Errorf("package config theme = %q, want cobalt", cfg.Theme.Name)
+	}
+	userConfig := UserConfigPath()
+	contents, err := os.ReadFile(userConfig) //nolint:gosec // G304: test path
+	if err != nil {
+		t.Fatalf("package template was not copied: %v", err)
+	}
+	if string(contents) != "[theme]\nname = cobalt\n" {
+		t.Errorf("copied config = %q, want package template", contents)
+	}
+}
+
+func TestLoadConfigUserAndSystemBeatPackageTemplate(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "user"))
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", "gamepad-osk"))
+	writeTestConfig(t, filepath.Join(tmp, "prefix", "share", "gamepad-osk", "config"), "cobalt")
+
+	previousSystemConfig := systemConfigPath
+	systemConfigPath = filepath.Join(tmp, "etc", "gamepad-osk", "config")
+	t.Cleanup(func() { systemConfigPath = previousSystemConfig })
+	writeTestConfig(t, systemConfigPath, "nord")
+
+	if cfg := LoadConfig(""); cfg.Theme.Name != "nord" {
+		t.Errorf("system config theme = %q, want nord", cfg.Theme.Name)
+	}
+
+	writeTestConfig(t, UserConfigPath(), "matrix")
+	if cfg := LoadConfig(""); cfg.Theme.Name != "matrix" {
+		t.Errorf("user config theme = %q, want matrix", cfg.Theme.Name)
+	}
+}
+
+func TestLoadConfigOverrideBeatsAllOtherPaths(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "user"))
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", "gamepad-osk"))
+	writeTestConfig(t, filepath.Join(tmp, "prefix", "share", "gamepad-osk", "config"), "cobalt")
+	writeTestConfig(t, UserConfigPath(), "nord")
+	override := filepath.Join(tmp, "override")
+	writeTestConfig(t, override, "matrix")
+
+	if cfg := LoadConfig(override); cfg.Theme.Name != "matrix" {
+		t.Errorf("override config theme = %q, want matrix", cfg.Theme.Name)
+	}
+}
+
+func TestLoadConfigMalformedOverrideDoesNotFallBack(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "user"))
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", "gamepad-osk"))
+	previousSystemConfig := systemConfigPath
+	systemConfigPath = filepath.Join(tmp, "missing-system-config")
+	t.Cleanup(func() { systemConfigPath = previousSystemConfig })
+	writeTestConfig(t, filepath.Join(tmp, "prefix", "share", "gamepad-osk", "config"), "cobalt")
+	override := filepath.Join(tmp, "override")
+	if err := os.WriteFile(override, []byte(strings.Repeat("x", 65537)), 0644); err != nil { //nolint:gosec // G306: test config
+		t.Fatal(err)
+	}
+
+	if cfg := LoadConfig(override); cfg.Theme.Name != DefaultConfig().Theme.Name {
+		t.Errorf("malformed override theme = %q, want default %q", cfg.Theme.Name, DefaultConfig().Theme.Name)
+	}
+}
+
+func TestLoadConfigMissingPackageTemplateUsesDefaults(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "user"))
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", "gamepad-osk"))
+
+	previousSystemConfig := systemConfigPath
+	systemConfigPath = filepath.Join(tmp, "missing-system-config")
+	t.Cleanup(func() { systemConfigPath = previousSystemConfig })
+
+	if cfg := LoadConfig(""); cfg.Theme.Name != DefaultConfig().Theme.Name {
+		t.Errorf("missing package config theme = %q, want default %q", cfg.Theme.Name, DefaultConfig().Theme.Name)
+	}
+}
+
+func TestLoadConfigSkipsPackageConfigDirectory(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "user"))
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", "gamepad-osk"))
+	packageConfig := filepath.Join(tmp, "prefix", "share", "gamepad-osk", "config")
+	if err := os.MkdirAll(packageConfig, 0755); err != nil { //nolint:gosec // G301: test directory
+		t.Fatal(err)
+	}
+
+	previousSystemConfig := systemConfigPath
+	systemConfigPath = filepath.Join(tmp, "missing-system-config")
+	t.Cleanup(func() { systemConfigPath = previousSystemConfig })
+
+	if cfg := LoadConfig(""); cfg.Theme.Name != DefaultConfig().Theme.Name {
+		t.Errorf("package config directory theme = %q, want default %q", cfg.Theme.Name, DefaultConfig().Theme.Name)
+	}
+}
+
+func TestLoadConfigSkipsMalformedPackageTemplate(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "user"))
+	useExecutablePath(t, filepath.Join(tmp, "prefix", "bin", "gamepad-osk"))
+	packageConfig := filepath.Join(tmp, "prefix", "share", "gamepad-osk", "config")
+	if err := os.MkdirAll(filepath.Dir(packageConfig), 0755); err != nil { //nolint:gosec // G301: test directory
+		t.Fatal(err)
+	}
+	malformed := strings.Repeat("x", 65537)
+	if err := os.WriteFile(packageConfig, []byte(malformed), 0644); err != nil { //nolint:gosec // G306: test config
+		t.Fatal(err)
+	}
+
+	previousSystemConfig := systemConfigPath
+	systemConfigPath = filepath.Join(tmp, "missing-system-config")
+	t.Cleanup(func() { systemConfigPath = previousSystemConfig })
+
+	if cfg := LoadConfig(""); cfg.Theme.Name != DefaultConfig().Theme.Name {
+		t.Errorf("malformed package config theme = %q, want default %q", cfg.Theme.Name, DefaultConfig().Theme.Name)
+	}
+	contents, err := os.ReadFile(UserConfigPath()) //nolint:gosec // G304: test path
+	if err != nil {
+		t.Fatalf("default config was not created: %v", err)
+	}
+	if string(contents) == malformed {
+		t.Error("malformed package template was copied to user config")
+	}
+}
+
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
@@ -40,10 +212,10 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
-		name     string
-		modify   func(*Config)
-		checkFn  func(*Config) bool
-		desc     string
+		name    string
+		modify  func(*Config)
+		checkFn func(*Config) bool
+		desc    string
 	}{
 		{"deadzone too high", func(c *Config) { c.Gamepad.Deadzone = 2.0 },
 			func(c *Config) bool { return c.Gamepad.Deadzone == 0.25 }, "should reset to 0.25"},
