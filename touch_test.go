@@ -90,6 +90,26 @@ func TestPointerRepeatStopsOnMotionAndSuppressesRelease(t *testing.T) {
 	}
 }
 
+func TestPointerRepeatStartsFromSelectedKey(t *testing.T) {
+	geometry, width, height := testTouchGeometry()
+	var touch TouchInput
+	backspace := KeyPosition{Row: 0, Col: 1}
+	event := touchEventAt(t, TouchDown, 10, 20, 30, backspace, geometry, width, height)
+	touch.Handle(event, 10, width, height, geometry)
+
+	kb := &KeyboardState{Layout: [][]KeyDef{{{Code: KEY_A}, {Code: KEY_BACKSPACE}}}}
+	kb.Navigate(0, 1)
+	if !touch.StartRepeat(event, backspace, time.Unix(100, 0)) {
+		t.Fatal("StartRepeat returned false")
+	}
+	if !pressPointerKey(kb, backspace, nil) {
+		t.Fatal("pointer repeat start did not press selected key")
+	}
+	if kb.CursorRow != backspace.Row || kb.CursorCol != backspace.Col {
+		t.Errorf("pointer repeat cursor = (%d, %d); want (%d, %d)", kb.CursorRow, kb.CursorCol, backspace.Row, backspace.Col)
+	}
+}
+
 func TestTouchContactsActivateIndependentlyInReleaseOrder(t *testing.T) {
 	geometry, width, height := testTouchGeometry()
 	var touch TouchInput
@@ -279,12 +299,11 @@ func TestMouseDragAndInvalidRelease(t *testing.T) {
 		t.Fatalf("mouse release = %v, %v; want %v, true", activate, changed, final)
 	}
 	kb := NewKeyboardState(LayoutQWERTY)
-	startRow, startCol := kb.CursorRow, kb.CursorCol
-	if !kb.PressAt(*activate, nil) {
+	if !pressPointerKey(kb, *activate, nil) {
 		t.Fatal("mouse activation did not press selected key")
 	}
-	if kb.CursorRow != startRow || kb.CursorCol != startCol {
-		t.Errorf("mouse activation moved cursor to (%d, %d)", kb.CursorRow, kb.CursorCol)
+	if kb.CursorRow != final.Row || kb.CursorCol != final.Col {
+		t.Errorf("mouse activation cursor = (%d, %d); want (%d, %d)", kb.CursorRow, kb.CursorCol, final.Row, final.Col)
 	}
 	if activate, changed := touch.Handle(release, 10, width, height, geometry); activate != nil || changed {
 		t.Errorf("duplicate mouse release = %v, %v; want ignored", activate, changed)
@@ -481,7 +500,6 @@ func TestTouchModifierOverlapUsesReleaseOrder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kb := NewKeyboardState(LayoutQWERTY)
-			startRow, startCol := kb.CursorRow, kb.CursorCol
 			var touch TouchInput
 			contacts := map[KeyPosition]int64{shift: 30, q: 31}
 			for _, pos := range []KeyPosition{shift, q} {
@@ -489,15 +507,16 @@ func TestTouchModifierOverlapUsesReleaseOrder(t *testing.T) {
 			}
 			for _, pos := range tt.releaseOrder {
 				activate, _ := touch.Handle(touchEventAt(t, TouchUp, 10, 20, contacts[pos], pos, geometry, width, height), 10, width, height, geometry)
-				if activate == nil || !kb.PressAt(*activate, nil) {
+				if activate == nil || !pressPointerKey(kb, *activate, nil) {
 					t.Fatalf("TouchUp did not activate %v", pos)
 				}
 			}
 			if kb.ShiftActive != tt.wantShiftActive {
 				t.Errorf("ShiftActive = %v; want %v", kb.ShiftActive, tt.wantShiftActive)
 			}
-			if kb.CursorRow != startRow || kb.CursorCol != startCol {
-				t.Errorf("touch activation moved cursor to (%d, %d)", kb.CursorRow, kb.CursorCol)
+			last := tt.releaseOrder[len(tt.releaseOrder)-1]
+			if kb.CursorRow != last.Row || kb.CursorCol != last.Col {
+				t.Errorf("touch activation cursor = (%d, %d); want (%d, %d)", kb.CursorRow, kb.CursorCol, last.Row, last.Col)
 			}
 		})
 	}
