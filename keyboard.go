@@ -152,6 +152,10 @@ func (kb *KeyboardState) PressAt(pos KeyPosition, inj *Injector) bool {
 		return false
 	}
 
+	if kb.AccentPopup != nil {
+		kb.CloseAccentPopup()
+	}
+
 	kb.pressKey(row[pos.Col], inj)
 	return true
 }

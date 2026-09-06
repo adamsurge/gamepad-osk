@@ -440,6 +440,26 @@ func TestPressAtCallbacks(t *testing.T) {
 	}
 }
 
+func TestPressAtClosesAccentPopupBeforeActivation(t *testing.T) {
+	kb := NewKeyboardState(LayoutQWERTY)
+	kb.AccentPopup = &AccentPopupState{Accents: accentE, Selected: 1}
+	kb.LongPressActive = true
+	shift := findKeyPosition(t, func(key KeyDef) bool { return key.ModifierType == "shift" })
+
+	if !kb.PressAt(shift, nil) {
+		t.Fatal("PressAt returned false for valid key")
+	}
+	if kb.AccentPopup != nil {
+		t.Error("PressAt left accent popup open")
+	}
+	if kb.LongPressActive {
+		t.Error("PressAt left long press active")
+	}
+	if !kb.ShiftActive {
+		t.Error("PressAt did not activate target key after closing popup")
+	}
+}
+
 func TestPressAtAltTab(t *testing.T) {
 	kb := NewKeyboardState(LayoutQWERTY)
 	altTab := findKeyPosition(t, func(key KeyDef) bool { return key.Label == "AltTab" })
