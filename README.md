@@ -15,8 +15,7 @@ No Steam dependency. Works on X11 and Wayland (key injection via uinput).
   - [AUR (Arch Linux)](#aur-arch-linux)
   - [Nix / NixOS](#nix--nixos)
   - [Pre-built binary (x86_64)](#pre-built-binary-x86_64)
-   - [From source](#from-source)
-   - [Nix](#nix)
+  - [From source](#from-source)
   - [Bazzite / Immutable Fedora](#bazzite--immutable-fedora)
   - [Promptfont](#promptfont)
 - [Permissions](#permissions)
@@ -225,49 +224,6 @@ yay -S ttf-promptfont
 ```
 
 SDL3 is not available on Ubuntu 24.04 or Debian 12. Use a newer release or build SDL3 from source.
-
-### Nix
-
-Run directly:
-
-```bash
-nix run github:0x90shell/gamepad-osk -- --help
-```
-
-NixOS installs package, udev rules, and `uinput` kernel module:
-
-```nix
-{
-  inputs.gamepad-osk.url = "github:0x90shell/gamepad-osk";
-
-  outputs = { nixpkgs, gamepad-osk, ... }: {
-    nixosConfigurations.host = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [ gamepad-osk.nixosModules.default ];
-    };
-  };
-}
-
-# configuration.nix
-programs.gamepad-osk.enable = true;
-```
-
-Home Manager writes immutable declarative configuration and can enable user service:
-
-```nix
-imports = [ inputs.gamepad-osk.homeManagerModules.default ];
-
-programs.gamepad-osk = {
-  enable = true;
-  settings = {
-    theme.name = "matrix";
-    "gamepad.buttons".press = "a";
-  };
-  service.enable = true;
-};
-```
-
-Standalone Home Manager cannot configure host udev or load `uinput`; enable NixOS module or arrange those administrator-owned settings separately. Nix profile user units install below `$out/share/systemd/user`; ensure your session discovers profile data through `XDG_DATA_DIRS`.
 
 ### Bazzite / Immutable Fedora
 

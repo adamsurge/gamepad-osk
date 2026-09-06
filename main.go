@@ -233,15 +233,16 @@ CONFIG (first found)
   1. --config flag
   2. ~/.config/gamepad-osk/config
   3. /etc/gamepad-osk/config
-  4. config next to binary
-  5. config in working directory
+  4. <prefix>/share/gamepad-osk/config
+  5. config next to binary
+  6. config in working directory
 
 NOTES
   Controller auto-reconnects if disconnected (timeout, power-off, unplug).
   Wayland: panel_avoid controls panel spacing (true = respect panels, false = screen edge).
 
 REQUIREMENTS
-  Runtime: sdl3, sdl3_ttf, wayland, libx11, ttf-promptfont (AUR)
+  Runtime: sdl3, sdl3_ttf, fontconfig, wayland, libx11, ttf-promptfont (AUR)
   User must be in 'input' group for gamepad and key injection
 `,
 		version,

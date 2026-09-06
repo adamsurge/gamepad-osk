@@ -397,6 +397,20 @@ func TestPrintHelpMouseDisabled(t *testing.T) {
 	}
 }
 
+func TestPrintHelpListsCurrentConfigSearchOrderAndDependencies(t *testing.T) {
+	out := captureHelp(t, DefaultConfig())
+
+	for _, want := range []string{
+		"<prefix>/share/gamepad-osk/config",
+		"6. config in working directory",
+		"fontconfig",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help missing %q", want)
+		}
+	}
+}
+
 func TestBuildKeyGlyphs(t *testing.T) {
 	cfg := DefaultConfig()
 	glyphs := BuildKeyGlyphs(cfg.Gamepad)
