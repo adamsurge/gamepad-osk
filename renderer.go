@@ -2,13 +2,24 @@ package main
 
 import (
 	"errors"
-	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
 )
 
-const promptFontPath = "/usr/share/fonts/TTF/promptfont.ttf"
+var fontconfigLookup = findFontconfigFont
+
+var fhsFontDirs = []string{
+	"/usr/share/fonts/TTF",
+	"/usr/share/fonts/truetype/dejavu",
+	"/usr/share/fonts/truetype/liberation",
+	"/usr/share/fonts/truetype/freefont",
+	"/usr/share/fonts/truetype",
+	"/usr/share/fonts",
+}
+
+var fontFileExists = isReadableFile
 
 type texCacheKey struct {
 	text  string
@@ -60,7 +71,7 @@ func NewRenderer(r *SDLRenderer, theme Theme, unitSize, padding int32) (*Rendere
 	}
 
 	var fontGlyph *Font
-	if _, err := os.Stat(promptFontPath); err == nil {
+	if promptFontPath := findFont("PromptFont"); promptFontPath != "" {
 		fontGlyph, _ = TTF3OpenFont(promptFontPath, float32(glyphSize))
 	}
 	if fontGlyph == nil {
@@ -460,27 +471,32 @@ func isModActive(key KeyDef, kb *KeyboardState) bool {
 }
 
 func findFont(names ...string) string {
-	// Common font directories on Linux
-	dirs := []string{
-		"/usr/share/fonts/TTF",
-		"/usr/share/fonts/truetype/dejavu",
-		"/usr/share/fonts/truetype/liberation",
-		"/usr/share/fonts/truetype/freefont",
-		"/usr/share/fonts/truetype",
-		"/usr/share/fonts",
-	}
 	filePatterns := map[string][]string{
 		"DejaVu Sans":     {"DejaVuSans.ttf"},
 		"Liberation Sans": {"LiberationSans-Regular.ttf"},
 		"FreeSans":        {"FreeSans.ttf"},
+		"PromptFont":      {"promptfont.ttf"},
 	}
 
 	for _, name := range names {
-		patterns := filePatterns[name]
-		for _, dir := range dirs {
-			for _, pat := range patterns {
-				path := dir + "/" + pat
-				if _, err := os.Stat(path); err == nil {
+		if path := fontconfigLookup(name); path != "" && fontFileExists(path) {
+			return path
+		}
+	}
+
+	for _, name := range names {
+		for _, pattern := range filePatterns[name] {
+			if path := packageDataPath("fonts", pattern); path != "" && fontFileExists(path) {
+				return path
+			}
+		}
+	}
+
+	for _, name := range names {
+		for _, dir := range fhsFontDirs {
+			for _, pattern := range filePatterns[name] {
+				path := filepath.Join(dir, pattern)
+				if fontFileExists(path) {
 					return path
 				}
 			}

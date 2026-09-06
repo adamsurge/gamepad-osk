@@ -414,6 +414,8 @@ func migrateFromTOML(tomlPath, newPath string) error {
 
 var sudoHomeResolved string // cached sudo-aware home dir (log once)
 
+var systemConfigPath = "/etc/gamepad-osk/config"
+
 // UserConfigPath returns the user's config file path (XDG standard).
 // When run via sudo, resolves the real user's home via SUDO_USER.
 func UserConfigPath() string {
@@ -450,6 +452,16 @@ func legacyConfigPath() string {
 	return filepath.Join(xdg, "gamepad-osk", "config.toml")
 }
 
+func isParseableConfig(path string) bool {
+	f, err := os.Open(path) //nolint:gosec // G304: config paths are trusted
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	cfg := DefaultConfig()
+	return parseINI(f, &cfg) == nil
+}
+
 func LoadConfig(overridePath string) Config {
 	cfg := DefaultConfig()
 
@@ -467,34 +479,45 @@ func LoadConfig(overridePath string) Config {
 		}
 	}
 
-	// Priority: --config flag > user config > system config > next to binary > cwd
+	// Priority: --config flag > user config > system config > package config > next to binary > cwd
 	var paths []string
 	if overridePath != "" {
 		paths = append(paths, overridePath)
 	}
 	paths = append(paths,
 		userPath,
-		"/etc/gamepad-osk/config",
+		systemConfigPath,
 	)
+	packageConfig := packageDataPath("config")
+	if packageConfig != "" {
+		paths = append(paths, packageConfig)
+	}
 	if exe, err := os.Executable(); err == nil {
 		paths = append(paths, filepath.Join(filepath.Dir(exe), "config"))
 	}
 	paths = append(paths, "config")
 
 	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil { //nolint:gosec // G703: config paths are trusted
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() { //nolint:gosec // G703: config paths are trusted
 			f, err := os.Open(p) //nolint:gosec // G304: config paths are trusted
 			if err != nil {
 				log.Printf("Warning: cannot open %s: %v", p, err) //nolint:gosec // G706: log format from our code
 				continue
 			}
-			if parseErr := parseINI(f, &cfg); parseErr != nil {
+			candidate := cfg
+			parseErr := parseINI(f, &candidate)
+			if parseErr != nil {
 				log.Printf("Warning: error parsing %s: %v", p, parseErr) //nolint:gosec // G706: log format from our code
 			} else {
+				cfg = candidate
 				Debugf("Loaded config from %s", p)
+				_ = f.Close()
+				break
 			}
 			_ = f.Close()
-			break
+			if p != packageConfig {
+				break
+			}
 		}
 	}
 
@@ -512,12 +535,12 @@ func LoadConfig(overridePath string) Config {
 	if _, err := os.Stat(userPath); os.IsNotExist(err) {
 		copied := false
 		for _, src := range paths[1:] { // skip user path itself
-			if _, err := os.Stat(src); err == nil { //nolint:gosec // G703: config paths are trusted
+			if info, err := os.Stat(src); err == nil && info.Mode().IsRegular() && isParseableConfig(src) { //nolint:gosec // G703: config paths are trusted
 				if copyFile(src, userPath) == nil {
 					log.Printf("Created user config at %s (copied from %s)", userPath, src) //nolint:gosec // G706: paths from our own config search, not user input
 					copied = true
+					break
 				}
-				break
 			}
 		}
 		if !copied {
