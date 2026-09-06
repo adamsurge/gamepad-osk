@@ -39,10 +39,11 @@ type App struct {
 	touch         TouchInput
 
 	// Key repeat state
-	repeatAction  ActionType // action to repeat (ActionNone = inactive)
-	repeatStart   time.Time  // when key was first pressed
-	repeatLast    time.Time  // when last repeat fired
-	repeatInitial bool       // true = still in initial delay phase
+	repeatAction  ActionType  // action to repeat (ActionNone = inactive)
+	repeatStart   time.Time   // when key was first pressed
+	repeatLast    time.Time   // when last repeat fired
+	repeatInitial bool        // true = still in initial delay phase
+	repeatPos     KeyPosition // key captured when gamepad repeat starts
 
 	reconnectLast time.Time // cooldown for gamepad reconnection attempts
 
@@ -392,7 +393,7 @@ func (app *App) Run() error {
 			if event.Type == SDL_EVENT_QUIT {
 				app.touch.Cancel()
 				app.running = false
-				continue
+				break
 			}
 			if !app.visible {
 				continue
@@ -414,6 +415,9 @@ func (app *App) Run() error {
 			if changed {
 				rend.MarkDirty()
 			}
+		}
+		if !app.running {
+			break
 		}
 
 		// Process gamepad events (evdev - works regardless of window focus)
@@ -511,28 +515,25 @@ func (app *App) Run() error {
 			_, pointerPolling = app.touch.NextRepeat(time.Now(), time.Duration(cfg.Keys.RepeatDelayMs)*time.Millisecond, time.Duration(cfg.Keys.RepeatRateMs)*time.Millisecond)
 		}
 		if !app.visible || rend.dirtyFrames <= 0 || gamepad.NeedsPolling() || pointerPolling {
-			pollMs := 16 // hidden idle: ~60Hz for IPC + gamepad checks
+			pollDelay := 16 * time.Millisecond // hidden idle: ~60Hz for IPC + gamepad checks
 			if gamepad.NeedsPolling() {
-				pollMs = 4 // mouse/nav active: ~250Hz for smooth cursor
+				pollDelay = 4 * time.Millisecond // mouse/nav active: ~250Hz for smooth cursor
 			}
 			if app.repeatAction != ActionNone {
-				var nextMs int64
+				var next time.Duration
 				if app.repeatInitial {
-					nextMs = int64(cfg.Keys.RepeatDelayMs) - time.Since(app.repeatStart).Milliseconds()
+					next = time.Until(app.repeatStart.Add(time.Duration(cfg.Keys.RepeatDelayMs) * time.Millisecond))
 				} else {
-					nextMs = int64(cfg.Keys.RepeatRateMs) - time.Since(app.repeatLast).Milliseconds()
+					next = time.Until(app.repeatLast.Add(time.Duration(cfg.Keys.RepeatRateMs) * time.Millisecond))
 				}
-				if nextMs > 0 && int(nextMs) < pollMs {
-					pollMs = int(nextMs)
-				}
+				pollDelay = minimumPositiveDuration(pollDelay, next)
 			}
 			if pointerPolling {
-				if next, _ := app.touch.NextRepeat(time.Now(), time.Duration(cfg.Keys.RepeatDelayMs)*time.Millisecond, time.Duration(cfg.Keys.RepeatRateMs)*time.Millisecond); next > 0 && int(next.Milliseconds()) < pollMs {
-					pollMs = int(next.Milliseconds())
-				}
+				next, _ := app.touch.NextRepeat(time.Now(), time.Duration(cfg.Keys.RepeatDelayMs)*time.Millisecond, time.Duration(cfg.Keys.RepeatRateMs)*time.Millisecond)
+				pollDelay = minimumPositiveDuration(pollDelay, next)
 			}
-			if pollMs > 0 {
-				time.Sleep(time.Duration(pollMs) * time.Millisecond)
+			if pollDelay > 0 {
+				time.Sleep(pollDelay)
 			}
 		}
 	}
@@ -587,11 +588,12 @@ func (app *App) handleAction(a Action, kb *KeyboardState, inj *Injector, rend *R
 			len(key.Combo) == 0 && key.ShiftCode == 0 && key.Label != "Esc" {
 			// Repeatable key - fire immediately and start repeat
 			kb.PressCurrent(inj)
+			app.repeatPos = KeyPosition{Row: kb.CursorRow, Col: kb.CursorCol}
 			app.startRepeat(ActionPressRepeat)
 		}
 		// Non-repeatable keys (shortcuts, Esc, Cfg, Paste, modifiers) fire on release via ActionPress
 	case ActionPressRepeat:
-		kb.PressCurrent(inj)
+		kb.PressAt(app.repeatPos, inj)
 	case ActionBackspace:
 		if inj != nil {
 			inj.PressKey(KEY_BACKSPACE, nil)
@@ -761,6 +763,13 @@ func (app *App) startRepeat(action ActionType) {
 
 func (app *App) stopRepeat() {
 	app.repeatAction = ActionNone
+}
+
+func minimumPositiveDuration(current, candidate time.Duration) time.Duration {
+	if candidate > 0 && candidate < current {
+		return candidate
+	}
+	return current
 }
 
 func keyPositionForCode(kb *KeyboardState, code int) (KeyPosition, bool) {
